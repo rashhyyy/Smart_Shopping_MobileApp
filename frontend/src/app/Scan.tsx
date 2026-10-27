@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
-  StyleSheet, Text, View, TouchableOpacity, TextInput,
+  AppState, StyleSheet, Text, View, TouchableOpacity, TextInput,
   Animated, Vibration, FlatList, Share, Alert,
   Easing, StatusBar, Platform, ActivityIndicator,
 } from 'react-native';
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import Constants from 'expo-constants';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useIsFocused } from 'expo-router';
 import {
   LayoutGrid,
   Scan,
@@ -162,6 +162,8 @@ export default function App() {
   // ── All hooks first ──────────────────────────────────────────────────────
   const [permission, requestPermission] = useCameraPermissions();
   const router = useRouter();
+  const isFocused = useIsFocused();
+  const [appState, setAppState] = useState(AppState.currentState ?? 'active');
   const {
     currency,
     cartItems: items,
@@ -184,6 +186,11 @@ export default function App() {
 
   const params = useLocalSearchParams<{ tab?: string }>();
   const [tab, setTab] = useState<Tab>(params?.tab === 'cart' ? 'cart' : 'scanner');
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', setAppState);
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (params?.tab === 'cart') {
@@ -215,6 +222,11 @@ export default function App() {
   const budgetAlert = getBudgetAlert(totalSpend, budget);
   const alertCfg = ALERT_CONFIG[budgetAlert];
   const totalItems = items.reduce((s, i) => s + i.quantity, 0);
+  const isCameraActive =
+    permission?.granted === true &&
+    isFocused &&
+    appState === 'active' &&
+    tab === 'scanner';
 
   // Scan ring pulse
   useEffect(() => {
@@ -426,32 +438,33 @@ export default function App() {
         <>
           {/* Camera */}
           <View style={S.cameraWrap}>
-            <CameraView ref={cameraRef} style={S.camera} facing="back">
-
-              {/* Dimmed overlay with cutout hint */}
-              <View style={S.overlay} pointerEvents="none">
-                {/* Focus box */}
-                <View style={S.focusBox}>
-                  <View style={[S.corner, S.cTL]} />
-                  <View style={[S.corner, S.cTR]} />
-                  <View style={[S.corner, S.cBL]} />
-                  <View style={[S.corner, S.cBR]} />
-                  {isScanning && (
-                    <View style={S.scanningRow}>
-                      <ActivityIndicator color="#00e5a0" size="small" />
-                      <Text style={S.scanningText}>
-                        {scanState === 'capturing' ? 'Capturing…' : 'Reading text…'}
-                      </Text>
-                    </View>
-                  )}
+            {isCameraActive && (
+              <CameraView ref={cameraRef} style={S.camera} facing="back">
+                {/* Dimmed overlay with cutout hint */}
+                <View style={S.overlay} pointerEvents="none">
+                  {/* Focus box */}
+                  <View style={S.focusBox}>
+                    <View style={[S.corner, S.cTL]} />
+                    <View style={[S.corner, S.cTR]} />
+                    <View style={[S.corner, S.cBL]} />
+                    <View style={[S.corner, S.cBR]} />
+                    {isScanning && (
+                      <View style={S.scanningRow}>
+                        <ActivityIndicator color="#00e5a0" size="small" />
+                        <Text style={S.scanningText}>
+                          {scanState === 'capturing' ? 'Capturing…' : 'Reading text…'}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={S.hint}>
+                    {scanState === 'error'
+                      ? '⚠ ' + errorMsg
+                      : 'Point at a price tag and tap Scan'}
+                  </Text>
                 </View>
-                <Text style={S.hint}>
-                  {scanState === 'error'
-                    ? '⚠ ' + errorMsg
-                    : 'Point at a price tag and tap Scan'}
-                </Text>
-              </View>
-            </CameraView>
+              </CameraView>
+            )}
           </View>
 
           {/* Bottom panel */}
