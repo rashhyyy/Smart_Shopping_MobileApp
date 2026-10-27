@@ -10,13 +10,15 @@ import {
 import { Picker } from "@react-native-picker/picker"; // Make sure this is installed
 import { useEffect, useState } from "react";
 
+import { useUser } from "../context/UserContext";
+
 type Props = {
   visible: boolean;
   onClose: () => void;
   currentBudget: number;
   onSave: (newBudget: number) => void;
-  currency: string;
-  setCurrency: (currency: string) => void;
+  currency?: string;
+  setCurrency?: (currency: string) => void;
 };
 
 export default function EditBudgetModal({
@@ -27,6 +29,7 @@ export default function EditBudgetModal({
   currency,
   setCurrency,
 }: Props) {
+  const { currency: globalCurrency, setCurrency: setGlobalCurrency } = useUser();
   const [budget, setBudget] = useState(currentBudget.toString());
 
   useEffect(() => {
@@ -34,16 +37,16 @@ export default function EditBudgetModal({
   }, [currentBudget]);
 
   const currencies = [
-    { code: "INR", symbol: "₹" },
-    { code: "USD", symbol: "$" },
-    { code: "EUR", symbol: "€" },
-    { code: "GBP", symbol: "£" },
-    { code: "LKR", symbol: "Rs" },
-    { code: "JPY", symbol: "¥" },
-    { code: "AUD", symbol: "A$" },
-    { code: "CAD", symbol: "C$" },
-    { code: "SGD", symbol: "S$" },
-    { code: "AED", symbol: "د.إ" },
+    { code: "USD", symbol: "$", name: "United States Dollar" },
+    { code: "EUR", symbol: "€", name: "Euro" },
+    { code: "GBP", symbol: "£", name: "British Pound" },
+    { code: "INR", symbol: "₹", name: "Indian Rupee" },
+    { code: "LKR", symbol: "Rs", name: "Sri Lankan Rupee" },
+    { code: "CAD", symbol: "C$", name: "Canadian Dollar" },
+    { code: "AUD", symbol: "A$", name: "Australian Dollar" },
+    { code: "JPY", symbol: "¥", name: "Japanese Yen" },
+    { code: "SGD", symbol: "S$", name: "Singapore Dollar" },
+    { code: "AED", symbol: "د.إ", name: "United Arab Emirates Dirham" },
   ];
 
   return (
@@ -64,16 +67,27 @@ export default function EditBudgetModal({
 
           <View style={styles.pickerContainer}>
             <Picker
-              selectedValue={currency}
-              onValueChange={(itemValue: string) => setCurrency(itemValue)}
+              selectedValue={globalCurrency?.code || "USD"}
+              onValueChange={(itemValue: string) => {
+                const match = currencies.find((c) => c.code === itemValue);
+                if (match) {
+                  setGlobalCurrency({
+                    code: match.code,
+                    symbol: match.symbol,
+                    name: match.name,
+                    flag: '',
+                  });
+                  if (setCurrency) setCurrency(match.symbol);
+                }
+              }}
               style={styles.picker}
               dropdownIconColor="#FF6B00"
             >
               {currencies.map((item) => (
                 <Picker.Item
                   key={item.code}
-                  label={`${item.code}  (${item.symbol})`}
-                  value={item.symbol}
+                  label={`${item.code}  (${item.symbol}) - ${item.name}`}
+                  value={item.code}
                 />
               ))}
             </Picker>

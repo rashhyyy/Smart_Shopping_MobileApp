@@ -7,7 +7,7 @@ import {
 import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import Constants from 'expo-constants';
 import { manipulateAsync, SaveFormat } from 'expo-image-manipulator';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   LayoutGrid,
   Scan,
@@ -17,14 +17,6 @@ import {
 } from 'lucide-react-native';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-interface CartItem {
-  id: string;
-  label: string;
-  price: number;
-  rawText: string;
-  capturedAt: Date;
-  quantity: number;
-}
 
 type Tab = 'scanner' | 'cart';
 type BudgetAlert = 'none' | 'warning' | 'danger' | 'over';
@@ -160,7 +152,7 @@ const ALERT_CONFIG: Record<BudgetAlert, { color: string; bg: string; msg: string
   over: { color: '#ff4757', bg: 'rgba(255,71,87,0.14)', msg: '🚨  Budget exceeded!' },
 };
 
-const fmt = (n: number) => `Rs. ${Math.round(n).toLocaleString('en-LK')}`;
+import { useUser, CartItem } from '../context/UserContext';
 
 // ═════════════════════════════════════════════════════════════════════════════
 //  APP
@@ -170,9 +162,37 @@ export default function App() {
   // ── All hooks first ──────────────────────────────────────────────────────
   const [permission, requestPermission] = useCameraPermissions();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('scanner');
+  const {
+    currency,
+    cartItems: items,
+    addToCart: addGlobalItem,
+    updateCartItemQty,
+    removeCartItem,
+    clearCart: clearGlobalCart,
+  } = useUser();
+  const sym = currency?.symbol || '$';
+  const fmt = (n: number) => `${sym}${Math.round(n).toLocaleString()}`;
+
+  const formatItemTime = (d: any) => {
+    try {
+      const date = d instanceof Date ? d : new Date(d);
+      return isNaN(date.getTime()) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } catch {
+      return '';
+    }
+  };
+
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(params?.tab === 'cart' ? 'cart' : 'scanner');
+
+  useEffect(() => {
+    if (params?.tab === 'cart') {
+      setTab('cart');
+    } else if (params?.tab === 'scanner') {
+      setTab('scanner');
+    }
+  }, [params?.tab]);
   const [scanState, setScanState] = useState<ScanState>('idle');
-  const [items, setItems] = useState<CartItem[]>([]);
   const [budget, setBudget] = useState(0);
   const [budgetInput, setBudgetInput] = useState('');
   const [lastItem, setLastItem] = useState<CartItem | null>(null);
@@ -282,20 +302,15 @@ export default function App() {
 
   const addToCart = (label: string, price: number, rawText: string) => {
     const newItem: CartItem = {
-      id: Date.now().toString(),
+      id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       label: label || 'Scanned Item',
       price,
       rawText,
-      capturedAt: new Date(),
+      capturedAt: Date.now(),
       quantity: 1,
     };
 
-    setItems(prev => {
-      // If same label+price already exists, bump quantity
-      const match = prev.find(i => i.label === newItem.label && i.price === newItem.price);
-      if (match) return prev.map(i => i.id === match.id ? { ...i, quantity: i.quantity + 1 } : i);
-      return [...prev, newItem];
-    });
+    addGlobalItem(newItem);
 
     setLastItem(newItem);
     setShowPopup(true);
@@ -324,19 +339,16 @@ export default function App() {
   const removeItem = (id: string) =>
     Alert.alert('Remove Item', 'Remove from cart?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Remove', style: 'destructive', onPress: () => setItems(p => p.filter(i => i.id !== id)) },
+      { text: 'Remove', style: 'destructive', onPress: () => removeCartItem(id) },
     ]);
 
   const changeQty = (id: string, delta: number) =>
-    setItems(prev =>
-      prev.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + delta) } : i)
-        .filter(i => i.quantity > 0)
-    );
+    updateCartItemQty(id, delta);
 
   const clearCart = () =>
     Alert.alert('Clear Cart', 'Remove all items?', [
       { text: 'Cancel', style: 'cancel' },
-      { text: 'Clear All', style: 'destructive', onPress: () => setItems([]) },
+      { text: 'Clear All', style: 'destructive', onPress: () => clearGlobalCart() },
     ]);
 
   const exportCart = async () => {
@@ -387,7 +399,7 @@ export default function App() {
   // ═══════════════════════════════════════════════════════════════════════
   return (
     <View style={S.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#07080f" />
+      <StatusBar barStyle="light-content" />
 
       {/* ── Header ── */}
       <View style={S.header}>
@@ -456,7 +468,7 @@ export default function App() {
             <View style={S.budgetRow}>
               <TextInput
                 style={S.input}
-                placeholder="Set budget (Rs.)"
+                placeholder={`Set budget (${sym})`}
                 placeholderTextColor="#3a4a6a"
                 keyboardType="numeric"
                 value={budgetInput}
@@ -513,7 +525,7 @@ export default function App() {
                 <View style={[S.budgetRow, { marginTop: 8 }]}>
                   <TextInput
                     style={S.input}
-                    placeholder="Price in Rs."
+                    placeholder={`Price in ${sym}`}
                     placeholderTextColor="#3a4a6a"
                     keyboardType="numeric"
                     value={manualPrice}
@@ -577,7 +589,7 @@ export default function App() {
                     <View style={{ flex: 1 }}>
                       <Text style={S.cartLabel} numberOfLines={2}>{item.label}</Text>
                       <Text style={S.cartTime}>
-                        {item.capturedAt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}
+                        {formatItemTime(item.capturedAt)}
                       </Text>
                       <Text style={S.cartPrice}>{fmt(item.price)}</Text>
                     </View>
@@ -620,7 +632,7 @@ export default function App() {
                       }]} />
                     </View>
                     <Text style={[S.budgetLeftText, { color: alertCfg.color }]}>
-                      {budgetLeft >= 0 ? `Rs. ${Math.round(budgetLeft).toLocaleString()} remaining` : `Rs. ${Math.round(-budgetLeft).toLocaleString()} over budget`}
+                      {budgetLeft >= 0 ? `${sym} ${Math.round(budgetLeft).toLocaleString()} remaining` : `${sym} ${Math.round(-budgetLeft).toLocaleString()} over budget`}
                     </Text>
                   </>
                 )}
@@ -660,12 +672,17 @@ export default function App() {
 
         <TouchableOpacity
           style={S.tabButton}
-          activeOpacity={1}
+          onPress={() => setTab('scanner')}
+          activeOpacity={tab === 'scanner' ? 1 : 0.7}
         >
-          <View style={S.activeTabIconContainer}>
-            <Scan size={24} color="#E65F2B" />
-          </View>
-          <Text style={[S.tabLabel, S.activeTabLabel]}>
+          {tab === 'scanner' ? (
+            <View style={S.activeTabIconContainer}>
+              <Scan size={24} color="#E65F2B" />
+            </View>
+          ) : (
+            <Scan size={24} color="#9CA3AF" />
+          )}
+          <Text style={[S.tabLabel, tab === 'scanner' && S.activeTabLabel]}>
             Scan
           </Text>
         </TouchableOpacity>
@@ -681,9 +698,18 @@ export default function App() {
         <TouchableOpacity
           style={S.tabButton}
           onPress={() => setTab('cart')}
+          activeOpacity={tab === 'cart' ? 1 : 0.7}
         >
-          <ShoppingBag size={24} color="#9CA3AF" />
-          <Text style={S.tabLabel}>Cart</Text>
+          {tab === 'cart' ? (
+            <View style={S.activeTabIconContainer}>
+              <ShoppingBag size={24} color="#E65F2B" />
+            </View>
+          ) : (
+            <ShoppingBag size={24} color="#9CA3AF" />
+          )}
+          <Text style={[S.tabLabel, tab === 'cart' && S.activeTabLabel]}>
+            Cart{totalItems ? ` (${totalItems})` : ''}
+          </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -862,7 +888,11 @@ const S = StyleSheet.create({
   clearBtnText: { color: C.danger, fontWeight: '700', fontSize: 14 },
 
   popupOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.7)',
     justifyContent: 'center', alignItems: 'center',
   },

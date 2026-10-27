@@ -23,6 +23,7 @@ import {
   PieChart,
   ArrowLeft
 } from 'lucide-react-native';
+import { useUser } from '../context/UserContext';
 import React, {
   useCallback,
   useEffect,
@@ -161,10 +162,11 @@ interface SuccessPopupProps {
   visible: boolean;
   itemName: string;
   price: number;
+  currencySymbol?: string;
   onHide: () => void;
 }
 
-function SuccessPopup({ visible, itemName, price, onHide }: SuccessPopupProps) {
+function SuccessPopup({ visible, itemName, price, currencySymbol = '$', onHide }: SuccessPopupProps) {
   const scale = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(0)).current;
 
@@ -211,7 +213,7 @@ function SuccessPopup({ visible, itemName, price, onHide }: SuccessPopupProps) {
           </View>
           <Text style={popup.title}>Added to Cart!</Text>
           <Text style={popup.name} numberOfLines={1}>{itemName}</Text>
-          <Text style={popup.price}>₹ {price.toFixed(2)}</Text>
+          <Text style={popup.price}>{currencySymbol} {price.toFixed(2)}</Text>
         </Animated.View>
       </View>
     </Modal>
@@ -671,6 +673,8 @@ export default function AddItemScreen({
 
   const isValid = name.trim().length > 0 && parseFloat(price) > 0;
   const router = useRouter();
+  const { currency, addToCart, totalCartItems } = useUser();
+  const sym = currency?.symbol || '$';
 
   // ── VOICE ──────────────────────────────────
   const handleVoice = useCallback(() => {
@@ -727,11 +731,12 @@ export default function AddItemScreen({
     const p = parseFloat(price);
     const d = parseFloat(discount) || 0;
     const q = Math.max(1, parseInt(quantity) || 1);
+    const itemUnitPrice = discountedPrice > 0 ? discountedPrice : p;
 
     const newItem: CartItem = {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       label: name.trim(),
-      price: p,
+      price: itemUnitPrice,
       discount: d,
       quantity: q,
       category,
@@ -739,7 +744,19 @@ export default function AddItemScreen({
       addedAt: Date.now(),
     };
 
-    setAddedItem({ name: newItem.label, price: discountedPrice * q });
+    // Save directly to global shared cart state & storage
+    addToCart({
+      id: newItem.id,
+      label: newItem.label,
+      price: newItem.price,
+      quantity: newItem.quantity,
+      category: newItem.category,
+      discount: newItem.discount,
+      note: newItem.note,
+      capturedAt: newItem.addedAt,
+    });
+
+    setAddedItem({ name: newItem.label, price: itemUnitPrice * q });
     setShowSuccess(true);
 
     onAddItem?.(newItem);
@@ -760,7 +777,7 @@ export default function AddItemScreen({
   // ─────────────────────────────────────────────
   return (
     <View style={s.root}>
-      <StatusBar barStyle="dark-content" backgroundColor={T.bg} />
+      <StatusBar barStyle="dark-content" />
 
       {/* ── HEADER ───────────────────────────── */}
       <Animated.View style={[s.header, { shadowOpacity: headerShadowOpacity }]}>
@@ -813,12 +830,12 @@ export default function AddItemScreen({
           <View style={s.row}>
             <View style={{ flex: 1 }}>
               <InputField
-                label="Price (₹)"
+                label={`Price (${sym})`}
                 value={price}
                 onChangeText={setPrice}
                 placeholder="0"
                 keyboardType="decimal-pad"
-                prefix="₹"
+                prefix={sym}
               />
             </View>
             <View style={{ width: 12 }} />
@@ -901,25 +918,25 @@ export default function AddItemScreen({
             <View style={s.summaryCard}>
               <View style={s.summaryRow}>
                 <Text style={s.summaryKey}>Unit Price</Text>
-                <Text style={s.summaryVal}>₹ {parseFloat(price).toFixed(2)}</Text>
+                <Text style={s.summaryVal}>{sym} {parseFloat(price).toFixed(2)}</Text>
               </View>
               {parseFloat(discount) > 0 && (
                 <View style={s.summaryRow}>
                   <Text style={s.summaryKey}>Discount ({discount}%)</Text>
                   <Text style={[s.summaryVal, { color: T.success }]}>
-                    − ₹ {(parseFloat(price) - discountedPrice).toFixed(2)}
+                    − {sym} {(parseFloat(price) - discountedPrice).toFixed(2)}
                   </Text>
                 </View>
               )}
               {parseInt(quantity) > 1 && (
                 <View style={s.summaryRow}>
                   <Text style={s.summaryKey}>Qty × {quantity}</Text>
-                  <Text style={s.summaryVal}>₹ {discountedPrice.toFixed(2)} each</Text>
+                  <Text style={s.summaryVal}>{sym} {discountedPrice.toFixed(2)} each</Text>
                 </View>
               )}
               <View style={[s.summaryRow, s.summaryTotal]}>
                 <Text style={s.summaryTotalKey}>Total</Text>
-                <Text style={s.summaryTotalVal}>₹ {finalTotal.toFixed(2)}</Text>
+                <Text style={s.summaryTotalVal}>{sym} {finalTotal.toFixed(2)}</Text>
               </View>
             </View>
           )}
@@ -948,7 +965,7 @@ export default function AddItemScreen({
               {isValid && (
                 <View style={s.addBtnBadge}>
                   <Text style={s.addBtnBadgeTxt}>
-                    ₹ {finalTotal.toFixed(0)}
+                    {sym} {finalTotal.toFixed(0)}
                   </Text>
                 </View>
               )}
@@ -999,7 +1016,8 @@ export default function AddItemScreen({
         {/* Cart */}
         <TouchableOpacity
           style={s.tabButton}
-          onPress={() => router.push('/cart')}
+          onPress={() => router.push('/Scan?tab=cart')}
+          activeOpacity={0.7}
         >
           <ShoppingBag size={24} color="#9CA3AF" />
           <Text style={s.tabLabel}>Cart</Text>
@@ -1021,6 +1039,7 @@ export default function AddItemScreen({
           visible={showSuccess}
           itemName={addedItem.name}
           price={addedItem.price}
+          currencySymbol={currency?.symbol || '$'}
           onHide={() => {
             setShowSuccess(false);
             setAddedItem(null);

@@ -28,7 +28,7 @@ const { width, height } = Dimensions.get('window');
 
 export default function SignUpScreen() {
   const router = useRouter();
-  const { setUser, registerUser, registeredUsers } = useUser();
+  const { setUser, registerUser, registeredUsers, isLoggedIn, isLoadingSession } = useUser();
 
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -43,6 +43,12 @@ export default function SignUpScreen() {
   const [isSuccessModalVisible, setIsSuccessModalVisible] = useState(false);
   const [countdown, setCountdown] = useState(2);
   const [isGoogleModalVisible, setIsGoogleModalVisible] = useState(false);
+
+  useEffect(() => {
+    if (!isLoadingSession && isLoggedIn && !isSuccessModalVisible) {
+      router.replace('/home');
+    }
+  }, [isLoadingSession, isLoggedIn, isSuccessModalVisible]);
 
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const intervalTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -137,17 +143,11 @@ export default function SignUpScreen() {
     }
   }, [isSuccessModalVisible]);
 
-  const navigateToSignIn = (targetEmail?: string) => {
+  const navigateToHome = () => {
     if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
     if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
     setIsSuccessModalVisible(false);
-    router.replace({
-      pathname: '/login',
-      params: {
-        registeredEmail: targetEmail || email.trim(),
-        accountCreated: '1',
-      },
-    });
+    router.replace('/home');
   };
 
   const handleSignUp = () => {
@@ -221,7 +221,7 @@ export default function SignUpScreen() {
       }, 1000);
 
       redirectTimerRef.current = setTimeout(() => {
-        navigateToSignIn(email.trim());
+        navigateToHome();
       }, 2000);
     }, 500);
   };
@@ -517,7 +517,7 @@ export default function SignUpScreen() {
         visible={isSuccessModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => navigateToSignIn(email.trim())}
+        onRequestClose={navigateToHome}
       >
         <View style={styles.modalOverlay}>
           <Animated.View style={[styles.modalCard, { transform: [{ scale: scaleAnim }] }]}>
@@ -535,16 +535,16 @@ export default function SignUpScreen() {
             <View style={styles.countdownBadge}>
               <ActivityIndicator size="small" color="#F25C22" style={styles.countdownSpinner} />
               <Text style={styles.countdownText}>
-                Redirecting to Sign In in {countdown}s...
+                Entering Smart Shopping in {countdown}s...
               </Text>
             </View>
 
             <TouchableOpacity
               style={styles.modalDirectButton}
               activeOpacity={0.85}
-              onPress={() => navigateToSignIn(email.trim())}
+              onPress={navigateToHome}
             >
-              <Text style={styles.modalDirectButtonText}>Go to Sign In Now</Text>
+              <Text style={styles.modalDirectButtonText}>Continue to Home</Text>
               <Ionicons name="arrow-forward" size={16} color="#FFFFFF" style={{ marginLeft: 6 }} />
             </TouchableOpacity>
           </Animated.View>

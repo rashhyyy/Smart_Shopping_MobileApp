@@ -7,7 +7,8 @@ import {
     ScrollView,
     TouchableOpacity,
     Image,
-    Switch
+    Switch,
+    Alert
 } from 'react-native';
 
 import {
@@ -39,7 +40,25 @@ export default function Profile() {
 
     const router = useRouter();
 
-    const { user } = useUser();
+    const { user, currency, logoutUser } = useUser();
+
+    const handleLogout = () => {
+        Alert.alert(
+            'Log Out',
+            'Are you sure you want to log out of your account?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Log Out',
+                    style: 'destructive',
+                    onPress: async () => {
+                        await logoutUser();
+                        router.replace('/login');
+                    },
+                },
+            ]
+        );
+    };
 
     // ================= NOTIFICATION STATES =================
 
@@ -70,6 +89,14 @@ export default function Profile() {
             setShowNotificationToast(false);
 
         }, 1500);
+    };
+
+    const handleBack = () => {
+        if (router.canGoBack()) {
+            router.back();
+        } else {
+            router.replace('/home');
+        }
     };
 
     return (
@@ -105,7 +132,9 @@ export default function Profile() {
 
                     <TouchableOpacity
                         style={styles.roundButton}
-                        onPress={() => router.back()}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                        onPress={handleBack}
                     >
                         <ArrowLeft size={22} color="#1F2937" />
                     </TouchableOpacity>
@@ -246,7 +275,7 @@ export default function Profile() {
                             </View>
 
                             <Text style={styles.gridValue}>
-                                ₹12,847
+                                {currency?.symbol || '$'}12,847
                             </Text>
 
                             <Text style={styles.gridLabel}>
@@ -282,71 +311,80 @@ export default function Profile() {
 
                     <View style={styles.listSection}>
 
-                        <TouchableOpacity style={styles.listItem}>
+                        {/* SHOPPING HISTORY */}
+                        <Link href="/shopping-history" asChild>
+                            <TouchableOpacity style={styles.listItem} activeOpacity={0.7}>
 
-                            <View style={styles.listItemLeft}>
+                                <View style={styles.listItemLeft}>
 
-                                <ShoppingBag
-                                    size={20}
-                                    color="#4B5563"
+                                    <ShoppingBag
+                                        size={20}
+                                        color="#4B5563"
+                                    />
+
+                                    <Text style={styles.listItemText}>
+                                        Shopping History
+                                    </Text>
+
+                                </View>
+
+                                <ChevronRight
+                                    size={18}
+                                    color="#9CA3AF"
                                 />
 
-                                <Text style={styles.listItemText}>
-                                    Shopping History
-                                </Text>
+                            </TouchableOpacity>
+                        </Link>
 
-                            </View>
+                        {/* MY SCANS */}
+                        <Link href="/my-scans" asChild>
+                            <TouchableOpacity style={styles.listItem} activeOpacity={0.7}>
 
-                            <ChevronRight
-                                size={18}
-                                color="#9CA3AF"
-                            />
+                                <View style={styles.listItemLeft}>
 
-                        </TouchableOpacity>
+                                    <Scan
+                                        size={20}
+                                        color="#4B5563"
+                                    />
 
-                        <TouchableOpacity style={styles.listItem}>
+                                    <Text style={styles.listItemText}>
+                                        My Scans
+                                    </Text>
 
-                            <View style={styles.listItemLeft}>
+                                </View>
 
-                                <Scan
-                                    size={20}
-                                    color="#4B5563"
+                                <ChevronRight
+                                    size={18}
+                                    color="#9CA3AF"
                                 />
 
-                                <Text style={styles.listItemText}>
-                                    My Scans
-                                </Text>
+                            </TouchableOpacity>
+                        </Link>
 
-                            </View>
+                        {/* SAVED DISCOUNTS */}
+                        <Link href="/saved-discounts" asChild>
+                            <TouchableOpacity style={styles.listItem} activeOpacity={0.7}>
 
-                            <ChevronRight
-                                size={18}
-                                color="#9CA3AF"
-                            />
+                                <View style={styles.listItemLeft}>
 
-                        </TouchableOpacity>
+                                    <TagIcon
+                                        size={20}
+                                        color="#4B5563"
+                                    />
 
-                        <TouchableOpacity style={styles.listItem}>
+                                    <Text style={styles.listItemText}>
+                                        Saved Discounts
+                                    </Text>
 
-                            <View style={styles.listItemLeft}>
+                                </View>
 
-                                <TagIcon
-                                    size={20}
-                                    color="#4B5563"
+                                <ChevronRight
+                                    size={18}
+                                    color="#9CA3AF"
                                 />
 
-                                <Text style={styles.listItemText}>
-                                    Saved Discounts
-                                </Text>
-
-                            </View>
-
-                            <ChevronRight
-                                size={18}
-                                color="#9CA3AF"
-                            />
-
-                        </TouchableOpacity>
+                            </TouchableOpacity>
+                        </Link>
 
                     </View>
 
@@ -416,27 +454,34 @@ export default function Profile() {
 
                         {/* CURRENCY */}
 
-                        <TouchableOpacity style={styles.listItem}>
+                        <Link href="/currency" asChild>
+                            <TouchableOpacity style={styles.listItem} activeOpacity={0.7}>
 
-                            <View style={styles.listItemLeft}>
+                                <View style={styles.listItemLeft}>
 
-                                <DollarSign
-                                    size={20}
-                                    color="#4B5563"
-                                />
+                                    <DollarSign
+                                        size={20}
+                                        color="#4B5563"
+                                    />
 
-                                <Text style={styles.listItemText}>
-                                    Currency
-                                </Text>
+                                    <Text style={styles.listItemText}>
+                                        Currency
+                                    </Text>
 
-                            </View>
+                                </View>
 
-                            <ChevronRight
-                                size={18}
-                                color="#9CA3AF"
-                            />
+                                <View style={styles.listItemRight}>
+                                    <Text style={styles.currencyBadgeText}>
+                                        {currency?.code || 'USD'} ({currency?.symbol || '$'})
+                                    </Text>
+                                    <ChevronRight
+                                        size={18}
+                                        color="#9CA3AF"
+                                    />
+                                </View>
 
-                        </TouchableOpacity>
+                            </TouchableOpacity>
+                        </Link>
 
                     </View>
 
@@ -498,6 +543,8 @@ export default function Profile() {
                                 styles.listItem,
                                 styles.lastItem
                             ]}
+                            onPress={handleLogout}
+                            activeOpacity={0.7}
                         >
 
                             <View style={styles.listItemLeft}>
@@ -779,6 +826,18 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
         color: '#1F2937',
+    },
+
+    listItemRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+
+    currencyBadgeText: {
+        fontSize: 13,
+        color: '#E65F2B',
+        fontWeight: '600',
+        marginRight: 6,
     },
 
     // ================= FOOTER =================

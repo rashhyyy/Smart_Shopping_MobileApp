@@ -16,6 +16,8 @@ import EditCategoryModal from "../components/EditCategoryModal";
 // ✅ Included all used icons including ArrowLeft
 import { LayoutGrid, Scan, PlusCircle, ShoppingBag, PieChart, ArrowLeft } from "lucide-react-native";
 
+import { useUser } from "../context/UserContext";
+
 type Category = {
     name: string;
     amount: number;
@@ -24,12 +26,11 @@ type Category = {
 
 export default function BudgetScreen() {
     const router = useRouter();
+    const { currency: globalCurrency } = useUser();
+    const currency = globalCurrency?.symbol || "$";
 
     // Budget State
     const [budget, setBudget] = useState(2500);
-
-    // Currency State
-    const [currency, setCurrency] = useState("₹");
 
     // Modals Visibility State
     const [expenseModalVisible, setExpenseModalVisible] = useState(false);
@@ -240,7 +241,6 @@ export default function BudgetScreen() {
                 currentBudget={budget}
                 onSave={(newBudget: number) => setBudget(newBudget)}
                 currency={currency}
-                setCurrency={setCurrency}
             />
 
             <EditCategoryModal
@@ -295,7 +295,11 @@ export default function BudgetScreen() {
                 </TouchableOpacity>
 
                 {/* Cart Button */}
-                <TouchableOpacity style={styles.tabButton}>
+                <TouchableOpacity
+                    style={styles.tabButton}
+                    onPress={() => router.push('/Scan?tab=cart')}
+                    activeOpacity={0.7}
+                >
                     <ShoppingBag size={24} color="#9CA3AF" />
                     <Text style={styles.tabLabel}>Cart</Text>
                 </TouchableOpacity>

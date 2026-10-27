@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
-import { Bell, Volume2, Fingerprint, Sparkles, Info, RefreshCw } from 'lucide-react-native';
+import { Bell, Volume2, Fingerprint, Sparkles, Info, RefreshCw, DollarSign, ChevronRight } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { useUser } from '../context/UserContext';
 
 export default function Settings() {
     const router = useRouter();
+    const { currency } = useUser();
 
     // Preference Toggle States matching video layout choices
     const [notifications, setNotifications] = useState(true);
@@ -72,7 +74,7 @@ export default function Settings() {
                             />
                         </View>
 
-                        <View style={[styles.settingRow, styles.lastRow]}>
+                        <View style={styles.settingRow}>
                             <View style={styles.rowLeft}>
                                 <Sparkles size={20} color="#4B5563" />
                                 <Text style={styles.settingName}>Auto Scan on Open</Text>
@@ -84,6 +86,24 @@ export default function Settings() {
                                 thumbColor={autoScan ? '#E65F2B' : '#F3F4F6'}
                             />
                         </View>
+
+                        {/* CURRENCY PREFERENCE */}
+                        <TouchableOpacity
+                            style={[styles.settingRow, styles.lastRow]}
+                            activeOpacity={0.6}
+                            onPress={() => router.push('/currency')}
+                        >
+                            <View style={styles.rowLeft}>
+                                <DollarSign size={20} color="#4B5563" />
+                                <Text style={styles.settingName}>Currency</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                <Text style={styles.valueText}>
+                                    {currency?.code || 'USD'} ({currency?.symbol || '$'})
+                                </Text>
+                                <ChevronRight size={16} color="#9CA3AF" style={{ marginLeft: 6 }} />
+                            </View>
+                        </TouchableOpacity>
                     </View>
 
                     {/* SECTION 2: ABOUT */}

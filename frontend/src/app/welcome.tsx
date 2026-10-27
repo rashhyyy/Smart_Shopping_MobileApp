@@ -7,7 +7,7 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       {/* Safe status bar configuration for the dashboard */}
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" />
 
       <View style={styles.content}>
         <Text style={styles.welcomeText}>Welcome to</Text>

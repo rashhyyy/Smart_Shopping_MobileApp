@@ -30,15 +30,29 @@ import Svg, { Circle } from 'react-native-svg';
 
 // ✅ IMPORT ROUTER
 import { useRouter } from 'expo-router';
+import { useUser } from '../context/UserContext';
 
 export default function Index() {
 
   // ✅ ROUTER
   const router = useRouter();
+  const { currency, cartItems, totalCartSpend } = useUser();
+  const sym = currency?.symbol || '$';
 
   // Dynamic values
-  const [totalSpent, setTotalSpent] = useState(1121);
+  const totalSpent = cartItems && cartItems.length > 0 ? totalCartSpend : 1121;
   const budgetLimit = 2500;
+
+  // Dynamic savings from active cart discounts or fallback
+  const totalCartSavings = (cartItems || []).reduce((acc, item) => {
+    if (item.discount && item.discount > 0) {
+      const origPrice = item.price / (1 - item.discount / 100);
+      return acc + (origPrice - item.price) * item.quantity;
+    }
+    return acc;
+  }, 0);
+
+  const displaySavings = totalCartSavings > 0 ? Math.round(totalCartSavings).toLocaleString() : '128';
 
   // Percentage Calculation
   const percentage = Math.min(
@@ -110,11 +124,11 @@ export default function Index() {
               </Text>
 
               <Text style={styles.totalSpentAmount}>
-                ₹{totalSpent.toLocaleString('en-IN')}
+                {sym}{totalSpent.toLocaleString()}
               </Text>
 
               <Text style={styles.budgetLimit}>
-                of ₹{budgetLimit.toLocaleString('en-IN')} budget
+                of {sym}{budgetLimit.toLocaleString()} budget
               </Text>
 
               <View style={styles.badgeRow}>
@@ -126,7 +140,9 @@ export default function Index() {
                   />
 
                   <Text style={styles.badgeText}>
-                    8 Items
+                    {cartItems && cartItems.length > 0
+                      ? `${cartItems.reduce((s, i) => s + i.quantity, 0)} Items`
+                      : '8 Items'}
                   </Text>
                 </View>
 
@@ -137,7 +153,9 @@ export default function Index() {
                   />
 
                   <Text style={styles.badgeText}>
-                    3 Discounts
+                    {cartItems && cartItems.filter(i => (i.discount || 0) > 0).length > 0
+                      ? `${cartItems.filter(i => (i.discount || 0) > 0).length} Discounts`
+                      : '3 Discounts'}
                   </Text>
                 </View>
 
@@ -225,7 +243,10 @@ export default function Index() {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.actionButton}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => router.push('/Scan?tab=cart')}
+              >
                 <View
                   style={[
                     styles.iconContainer,
@@ -250,7 +271,7 @@ export default function Index() {
               Recent Items
             </Text>
 
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/Scan?tab=cart')}>
               <Text style={styles.viewAllText}>
                 View All
               </Text>
@@ -258,113 +279,142 @@ export default function Index() {
 
           </View>
 
-          {/* ITEM 1 */}
-          <View style={styles.itemCard}>
-
-            <View
-              style={[
-                styles.itemIconBadge,
-                { backgroundColor: '#FFF5F0' },
-              ]}
-            >
-              <Scan size={18} color="#E65F2B" />
-            </View>
-
-            <View style={styles.itemInfo}>
-              <Text style={styles.itemName}>
-                Organic Almonds 250g
-              </Text>
-
-              <Text style={styles.itemDetails}>
-                Groceries · 2 min ago
-              </Text>
-            </View>
-
-            <View style={styles.priceContainer}>
-              <Text style={styles.priceText}>
-                ₹349
-              </Text>
-
-              <Text
-                style={[
-                  styles.discountText,
-                  { color: '#E11D48' },
-                ]}
+          {cartItems && cartItems.length > 0 ? (
+            cartItems.slice(0, 5).map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={styles.itemCard}
+                onPress={() => router.push('/Scan?tab=cart')}
+                activeOpacity={0.7}
               >
-                -12.5%
-              </Text>
-            </View>
+                <View
+                  style={[
+                    styles.itemIconBadge,
+                    { backgroundColor: item.category === 'dairy' ? '#F0FDF4' : '#FFF5F0' },
+                  ]}
+                >
+                  {item.category === 'dairy' ? (
+                    <Mic size={18} color="#15803D" />
+                  ) : (
+                    <Scan size={18} color="#E65F2B" />
+                  )}
+                </View>
 
-          </View>
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName} numberOfLines={1}>
+                    {item.label}
+                  </Text>
+                  <Text style={styles.itemDetails}>
+                    {(item.category || 'General').charAt(0).toUpperCase() + (item.category || 'General').slice(1)} · Qty: {item.quantity}
+                  </Text>
+                </View>
 
-          {/* ITEM 2 */}
-          <View style={styles.itemCard}>
+                <View style={styles.priceContainer}>
+                  <Text style={styles.priceText}>
+                    {sym}{(item.price * item.quantity).toFixed(2)}
+                  </Text>
+                  {item.discount && item.discount > 0 ? (
+                    <Text style={[styles.discountText, { color: '#E11D48' }]}>
+                      -{item.discount}%
+                    </Text>
+                  ) : null}
+                </View>
+              </TouchableOpacity>
+            ))
+          ) : (
+            <>
+              {/* ITEM 1 */}
+              <View style={styles.itemCard}>
+                <View
+                  style={[
+                    styles.itemIconBadge,
+                    { backgroundColor: '#FFF5F0' },
+                  ]}
+                >
+                  <Scan size={18} color="#E65F2B" />
+                </View>
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName}>
+                    Organic Almonds 250g
+                  </Text>
+                  <Text style={styles.itemDetails}>
+                    Groceries · 2 min ago
+                  </Text>
+                </View>
+                <View style={styles.priceContainer}>
+                  <Text style={styles.priceText}>
+                    {sym}349
+                  </Text>
+                  <Text
+                    style={[
+                      styles.discountText,
+                      { color: '#E11D48' },
+                    ]}
+                  >
+                    -12.5%
+                  </Text>
+                </View>
+              </View>
 
-            <View
-              style={[
-                styles.itemIconBadge,
-                { backgroundColor: '#F0FDF4' },
-              ]}
-            >
-              <Mic size={18} color="#15803D" />
-            </View>
+              {/* ITEM 2 */}
+              <View style={styles.itemCard}>
+                <View
+                  style={[
+                    styles.itemIconBadge,
+                    { backgroundColor: '#F0FDF4' },
+                  ]}
+                >
+                  <Mic size={18} color="#15803D" />
+                </View>
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName}>
+                    Fresh Milk 1L
+                  </Text>
+                  <Text style={styles.itemDetails}>
+                    Dairy · 5 min ago
+                  </Text>
+                </View>
+                <View style={styles.priceContainer}>
+                  <Text style={styles.priceText}>
+                    {sym}144
+                  </Text>
+                </View>
+              </View>
 
-            <View style={styles.itemInfo}>
-              <Text style={styles.itemName}>
-                Fresh Milk 1L
-              </Text>
-
-              <Text style={styles.itemDetails}>
-                Dairy · 5 min ago
-              </Text>
-            </View>
-
-            <View style={styles.priceContainer}>
-              <Text style={styles.priceText}>
-                ₹144
-              </Text>
-            </View>
-
-          </View>
-
-          {/* ITEM 3 */}
-          <View style={styles.itemCard}>
-
-            <View
-              style={[
-                styles.itemIconBadge,
-                { backgroundColor: '#FFF5F0' },
-              ]}
-            >
-              <Scan size={18} color="#E65F2B" />
-            </View>
-
-            <View style={styles.itemInfo}>
-              <Text style={styles.itemName}>
-                Whole Wheat Bread
-              </Text>
-
-              <Text style={styles.itemDetails}>
-                Bakery · 8 min ago
-              </Text>
-            </View>
-
-            <View style={styles.priceContainer}>
-              <Text style={styles.priceText}>
-                ₹45
-              </Text>
-
-              <Text
-                style={[
-                  styles.discountText,
-                  { color: '#E11D48' },
-                ]}
-              >
-                -18%
-              </Text>
-            </View>
-
-          </View>
+              {/* ITEM 3 */}
+              <View style={styles.itemCard}>
+                <View
+                  style={[
+                    styles.itemIconBadge,
+                    { backgroundColor: '#FFF5F0' },
+                  ]}
+                >
+                  <Scan size={18} color="#E65F2B" />
+                </View>
+                <View style={styles.itemInfo}>
+                  <Text style={styles.itemName}>
+                    Whole Wheat Bread
+                  </Text>
+                  <Text style={styles.itemDetails}>
+                    Bakery · 8 min ago
+                  </Text>
+                </View>
+                <View style={styles.priceContainer}>
+                  <Text style={styles.priceText}>
+                    {sym}45
+                  </Text>
+                  <Text
+                    style={[
+                      styles.discountText,
+                      { color: '#E11D48' },
+                    ]}
+                  >
+                    -18%
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
 
           {/* ================= SAVINGS BANNER ================= */}
           <View style={styles.savingsBanner}>
@@ -375,7 +425,7 @@ export default function Index() {
 
             <View style={styles.savingsTextContainer}>
               <Text style={styles.savingsTitle}>
-                You saved ₹128 today!
+                {`You saved ${sym}${displaySavings} today!`}
               </Text>
 
               <Text style={styles.savingsSubtitle}>
@@ -422,7 +472,11 @@ export default function Index() {
             <Text style={styles.tabLabel}>Add</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.tabButton}>
+          <TouchableOpacity
+            style={styles.tabButton}
+            onPress={() => router.push('/Scan?tab=cart')}
+            activeOpacity={0.7}
+          >
             <ShoppingBag size={24} color="#9CA3AF" />
             <Text style={styles.tabLabel}>Cart</Text>
           </TouchableOpacity>

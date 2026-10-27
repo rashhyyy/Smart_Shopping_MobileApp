@@ -27,7 +27,13 @@ const { width, height } = Dimensions.get('window');
 export default function LoginScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ registeredEmail?: string; accountCreated?: string }>();
-  const { authenticateUser, setUser, registeredUsers } = useUser();
+  const { authenticateUser, setUser, registeredUsers, isLoggedIn, isLoadingSession } = useUser();
+
+  useEffect(() => {
+    if (!isLoadingSession && isLoggedIn) {
+      router.replace('/home');
+    }
+  }, [isLoadingSession, isLoggedIn]);
 
   const [email, setEmail] = useState(params.registeredEmail || '');
   const [password, setPassword] = useState('');

@@ -1,6 +1,6 @@
 import { useRouter } from "expo-router";
-import { useSharedValue } from "react-native-reanimated";
-import React, { useEffect, useRef } from "react"; import {
+import React, { useEffect, useRef } from "react";
+import {
     View,
     Text,
     StyleSheet,
@@ -9,11 +9,19 @@ import React, { useEffect, useRef } from "react"; import {
     ImageBackground,
     Animated,
 } from "react-native";
+import { useUser } from "../context/UserContext";
 
 export default function StartPage() {
     const router = useRouter();
+    const { isLoggedIn, isLoadingSession } = useUser();
 
     const scaleAnim = useRef(new Animated.Value(1)).current;
+
+    useEffect(() => {
+        if (!isLoadingSession && isLoggedIn) {
+            router.replace("/home");
+        }
+    }, [isLoadingSession, isLoggedIn]);
 
     useEffect(() => {
         Animated.loop(
@@ -72,7 +80,13 @@ export default function StartPage() {
             {/* Button */}
             <TouchableOpacity
                 style={styles.button}
-                onPress={() => router.push("/login")}
+                onPress={() => {
+                    if (isLoggedIn) {
+                        router.replace("/home");
+                    } else {
+                        router.push("/login");
+                    }
+                }}
             >
                 <Text style={styles.buttonText}>
                     Get Started →
