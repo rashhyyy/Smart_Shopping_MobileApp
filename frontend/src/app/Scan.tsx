@@ -135,6 +135,19 @@ const extractLabel = (text: string, priceStr: string): string => {
   return cleaned.length > 3 ? cleaned.slice(-40) : '';
 };
 
+const detectCategoryFromText = (text: string): string => {
+  const t = (text || '').toLowerCase();
+  if (/(milk|cheese|butter|yogurt|curd|paneer|cream|egg|dairy)/i.test(t)) return 'dairy';
+  if (/(cola|coke|pepsi|sprite|fanta|juice|water|soda|tea|coffee|drink|beverage|beer)/i.test(t)) return 'beverage';
+  if (/(biscuit|chips|snack|popcorn|cookie|chocolate|candy|wafer|cracker)/i.test(t)) return 'snacks';
+  if (/(apple|banana|orange|potato|onion|tomato|vegetable|fruit|produce|carrot|broccoli|mango)/i.test(t)) return 'produce';
+  if (/(bread|loaf|cake|bun|pastry|croissant|muffin|bakery|toast)/i.test(t)) return 'bakery';
+  if (/(chicken|beef|fish|pork|mutton|lamb|meat|seafood|prawn|shrimp)/i.test(t)) return 'meat';
+  if (/(soap|shampoo|toothpaste|toothbrush|lotion|perfume|deodorant|personal)/i.test(t)) return 'personal';
+  if (/(detergent|cleaner|dishwash|sponge|bleach|tissue|household|wipe)/i.test(t)) return 'household';
+  return 'grocery';
+};
+
 // ─── Budget helpers ───────────────────────────────────────────────────────────
 const getBudgetAlert = (spent: number, budget: number): BudgetAlert => {
   if (budget <= 0) return 'none';
@@ -171,6 +184,7 @@ export default function App() {
     updateCartItemQty,
     removeCartItem,
     clearCart: clearGlobalCart,
+    incrementScansCount,
   } = useUser();
   const sym = currency?.symbol || '$';
   const fmt = (n: number) => `${sym}${Math.round(n).toLocaleString()}`;
@@ -313,6 +327,7 @@ export default function App() {
   }, [scanState, items]);
 
   const addToCart = (label: string, price: number, rawText: string) => {
+    const detectedCategory = detectCategoryFromText((label || '') + ' ' + (rawText || ''));
     const newItem: CartItem = {
       id: `${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       label: label || 'Scanned Item',
@@ -320,9 +335,11 @@ export default function App() {
       rawText,
       capturedAt: Date.now(),
       quantity: 1,
+      category: detectedCategory,
     };
 
     addGlobalItem(newItem);
+    incrementScansCount?.();
 
     setLastItem(newItem);
     setShowPopup(true);

@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     StyleSheet,
     Text,
@@ -165,12 +166,31 @@ const CATEGORIES = ['All', 'Price Drops', 'Favorites', 'Groceries', 'Electronics
 
 export default function MyScansScreen() {
     const router = useRouter();
-    const { currency } = useUser();
+    const { currency, scansCount } = useUser();
     const sym = currency?.symbol || '$';
 
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
-    const [scansList, setScansList] = useState<ScannedProduct[]>(INITIAL_SCANS);
+    const [scansList, setScansList] = useState<ScannedProduct[]>([]);
+
+    useEffect(() => {
+        let isMounted = true;
+        async function loadScans() {
+            try {
+                const saved = await AsyncStorage.getItem('@app_scans_list');
+                if (saved && isMounted) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed)) {
+                        setScansList(parsed);
+                        return;
+                    }
+                }
+            } catch (e) {}
+            if (isMounted) setScansList([]);
+        }
+        loadScans();
+        return () => { isMounted = false; };
+    }, []);
 
     const handleBack = () => {
         if (router.canGoBack()) {
@@ -181,11 +201,13 @@ export default function MyScansScreen() {
     };
 
     const toggleFavorite = (id: string) => {
-        setScansList(prev =>
-            prev.map(item =>
+        setScansList(prev => {
+            const updated = prev.map(item =>
                 item.id === id ? { ...item, isFavorite: !item.isFavorite } : item
-            )
-        );
+            );
+            AsyncStorage.setItem('@app_scans_list', JSON.stringify(updated)).catch(() => {});
+            return updated;
+        });
     };
 
     const filteredScans = useMemo(() => {
@@ -212,7 +234,7 @@ export default function MyScansScreen() {
     }, [scansList, selectedCategory, searchQuery]);
 
     // Statistics calculated dynamically
-    const totalScansCount = 847; // Matches user profile stat
+    const totalScansCount = scansCount || 0;
     const priceDropsCount = scansList.filter(s => s.priceDrop).length;
     const totalPotentialSavings = scansList.reduce(
         (sum, item) => sum + (item.originalPrice - item.bestPrice),
@@ -236,7 +258,7 @@ export default function MyScansScreen() {
                     <View style={styles.headerTitleContainer}>
                         <Text style={styles.headerTitle}>My Scans</Text>
                         <Text style={styles.headerSubtitle}>
-                            {scansList.length} recent • 847 total scans
+                            {scansList.length} recent • {totalScansCount} total scans
                         </Text>
                     </View>
 

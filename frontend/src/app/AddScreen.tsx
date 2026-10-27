@@ -514,7 +514,7 @@ function CategoryPill({
   selected,
   onPress,
 }: {
-  cat: (typeof CATEGORIES)[0];
+  cat: { id: string; label: string; icon: string };
   selected: boolean;
   onPress: () => void;
 }) {
@@ -815,8 +815,19 @@ export default function AddItemScreen({
 
   const isValid = name.trim().length > 0 && parseFloat(price) > 0;
   const router = useRouter();
-  const { currency, addToCart, totalCartItems } = useUser();
+  const { currency, addToCart, totalCartItems, customCategories } = useUser();
   const sym = currency?.symbol || '$';
+
+  const allCategories = useMemo(() => {
+    return [
+      ...CATEGORIES,
+      ...(customCategories || []).map((c) => ({
+        id: c.id,
+        label: c.name,
+        icon: c.icon || '🏷️',
+      })),
+    ];
+  }, [customCategories]);
 
   // ── MICROPHONE PERMISSIONS ─────────────────
   const checkAndRequestMicrophonePermission = useCallback(async (): Promise<boolean> => {
@@ -1171,7 +1182,7 @@ export default function AddItemScreen({
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={s.catScroll}
             >
-              {CATEGORIES.map((cat) => (
+              {allCategories.map((cat) => (
                 <CategoryPill
                   key={cat.id}
                   cat={cat}

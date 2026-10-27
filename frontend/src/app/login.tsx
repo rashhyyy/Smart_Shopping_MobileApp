@@ -31,7 +31,7 @@ export default function LoginScreen() {
 
   useEffect(() => {
     if (!isLoadingSession && isLoggedIn) {
-      router.replace('/home');
+      router.replace('/Scan');
     }
   }, [isLoadingSession, isLoggedIn]);
 
@@ -64,7 +64,7 @@ export default function LoginScreen() {
         account.avatar ||
         'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
     });
-    router.replace('/home');
+    router.replace('/Scan');
   };
 
   const handleAppleAuth = async () => {
@@ -80,7 +80,7 @@ export default function LoginScreen() {
               phone: '+91 98765 43210',
               avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
             });
-            router.replace('/home');
+            router.replace('/Scan');
           }
         }, 800);
       } else {
@@ -101,7 +101,7 @@ export default function LoginScreen() {
                   phone: '+91 98765 43210',
                   avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
                 });
-                router.replace('/home');
+                router.replace('/Scan');
               },
             },
           ]
@@ -145,9 +145,9 @@ export default function LoginScreen() {
         return;
       }
 
-      // Successful authentication -> navigate to /home
+      // Successful authentication -> navigate to /Scan
       setIsSubmitting(false);
-      router.replace('/home');
+      router.replace('/Scan');
     } catch (err: any) {
       setIsSubmitting(false);
       const errorMsg = 'An error occurred during sign in. Please try again.';

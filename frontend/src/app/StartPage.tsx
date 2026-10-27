@@ -18,7 +18,7 @@ export default function StartPage() {
 
     useEffect(() => {
         if (!isLoadingSession && isLoggedIn) {
-            router.replace("/home");
+            router.replace("/Scan");
         }
     }, [isLoadingSession, isLoggedIn]);
 
@@ -45,7 +45,7 @@ export default function StartPage() {
         <View style={styles.container}>
             <Image
                 source={require("../../assets/images/background.png")}
-                style={StyleSheet.absoluteFillObject}
+                style={StyleSheet.absoluteFill}
                 resizeMode="cover"
             />
             {/* Logo */}
@@ -82,7 +82,7 @@ export default function StartPage() {
                 style={styles.button}
                 onPress={() => {
                     if (isLoggedIn) {
-                        router.replace("/home");
+                        router.replace("/Scan");
                     } else {
                         router.push("/login");
                     }

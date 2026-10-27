@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 import {
     StyleSheet,
@@ -9,8 +9,14 @@ import {
     Image,
     TextInput,
     KeyboardAvoidingView,
-    Platform
+    Platform,
+    Modal,
+    Alert,
+    ActivityIndicator
 } from 'react-native';
+
+import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 
 import {
     SafeAreaProvider,
@@ -22,7 +28,10 @@ import {
     User,
     Mail,
     Phone,
-    Check
+    Check,
+    Image as ImageIcon,
+    ChevronRight,
+    X
 } from 'lucide-react-native';
 
 import { useRouter } from 'expo-router';
@@ -53,6 +62,112 @@ export default function EditProfile() {
     const [phone, setPhone] = useState(user.phone);
 
     const [showToast, setShowToast] = useState(false);
+    const [isPhotoModalVisible, setIsPhotoModalVisible] = useState(false);
+    const [isPickingImage, setIsPickingImage] = useState(false);
+
+    // Safely optimize and compress image to avoid Android memory crashes
+    const optimizeImage = async (rawUri: string): Promise<string> => {
+        try {
+            const manipResult = await ImageManipulator.manipulateAsync(
+                rawUri,
+                [{ resize: { width: 450 } }],
+                { compress: 0.7, format: ImageManipulator.SaveFormat.JPEG }
+            );
+            return manipResult.uri;
+        } catch (e) {
+            console.warn('[EditProfile] Image resize skipped, using raw uri:', e);
+            return rawUri;
+        }
+    };
+
+    // Recover pending camera result if Android killed MainActivity during camera capture
+    useEffect(() => {
+        let isMounted = true;
+        async function recoverPendingCameraPhoto() {
+            try {
+                const pending = await ImagePicker.getPendingResultAsync();
+                if (pending && 'assets' in pending && Array.isArray(pending.assets) && pending.assets.length > 0 && isMounted) {
+                    setIsPickingImage(true);
+                    const optimizedUri = await optimizeImage(pending.assets[0].uri);
+                    if (isMounted) {
+                        setSelectedAvatar(optimizedUri);
+                    }
+                }
+            } catch (err) {
+                console.warn('[EditProfile] Pending camera check skipped:', err);
+            } finally {
+                if (isMounted) setIsPickingImage(false);
+            }
+        }
+        recoverPendingCameraPhoto();
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    // Open phone camera to take photo without crashing
+    const handleTakePhoto = async () => {
+        setIsPhotoModalVisible(false);
+        try {
+            const { status } = await ImagePicker.requestCameraPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert(
+                    'Camera Permission Needed',
+                    'Please enable camera permissions in your device settings to take a profile photo.'
+                );
+                return;
+            }
+
+            setIsPickingImage(true);
+            const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ['images'],
+                allowsEditing: false, // Prevents Android native cropper crash
+                quality: 0.6, // Prevents high-resolution OOM memory crash
+            });
+
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+                const optimizedUri = await optimizeImage(result.assets[0].uri);
+                setSelectedAvatar(optimizedUri);
+            }
+        } catch (error) {
+            console.error('[EditProfile] Error taking photo:', error);
+            Alert.alert('Camera Error', 'Could not open camera. Please try again.');
+        } finally {
+            setIsPickingImage(false);
+        }
+    };
+
+    // Open gallery or files to choose picture safely
+    const handlePickFromGallery = async () => {
+        setIsPhotoModalVisible(false);
+        try {
+            const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+            if (status !== 'granted') {
+                Alert.alert(
+                    'Gallery Permission Needed',
+                    'Please enable photo library access in your device settings to choose a picture.'
+                );
+                return;
+            }
+
+            setIsPickingImage(true);
+            const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: false, // Prevents Android native cropper crash
+                quality: 0.6,
+            });
+
+            if (!result.canceled && result.assets && result.assets.length > 0) {
+                const optimizedUri = await optimizeImage(result.assets[0].uri);
+                setSelectedAvatar(optimizedUri);
+            }
+        } catch (error) {
+            console.error('[EditProfile] Error selecting image:', error);
+            Alert.alert('Gallery Error', 'Could not select image. Please try again.');
+        } finally {
+            setIsPickingImage(false);
+        }
+    };
 
     const handleSave = () => {
 
@@ -61,6 +176,7 @@ export default function EditProfile() {
             email,
             phone,
             avatar: selectedAvatar,
+            memberSince: user?.memberSince,
         });
 
         setShowToast(true);
@@ -153,21 +269,31 @@ export default function EditProfile() {
 
                         <View style={styles.avatarSection}>
 
-                            <View style={styles.mainAvatarContainer}>
+                            <TouchableOpacity
+                                activeOpacity={0.8}
+                                onPress={() => setIsPhotoModalVisible(true)}
+                                style={styles.mainAvatarContainer}
+                            >
 
                                 <Image
                                     source={{ uri: selectedAvatar }}
                                     style={styles.mainAvatar}
                                 />
 
-                                <View style={styles.cameraBadge}>
-                                    <Camera
-                                        size={14}
-                                        color="#FFFFFF"
-                                    />
-                                </View>
+                                {isPickingImage ? (
+                                    <View style={styles.loadingBadge}>
+                                        <ActivityIndicator size="small" color="#FFFFFF" />
+                                    </View>
+                                ) : (
+                                    <View style={styles.cameraBadge}>
+                                        <Camera
+                                            size={14}
+                                            color="#FFFFFF"
+                                        />
+                                    </View>
+                                )}
 
-                            </View>
+                            </TouchableOpacity>
 
                             <Text style={styles.chooseAvatarTitle}>
                                 Choose Avatar
@@ -276,6 +402,73 @@ export default function EditProfile() {
                     </ScrollView>
 
                 </KeyboardAvoidingView>
+
+                {/* ================= PHOTO PICKER MODAL ================= */}
+                <Modal
+                    visible={isPhotoModalVisible}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setIsPhotoModalVisible(false)}
+                >
+                    <TouchableOpacity
+                        style={styles.modalOverlay}
+                        activeOpacity={1}
+                        onPress={() => setIsPhotoModalVisible(false)}
+                    >
+                        <TouchableOpacity
+                            activeOpacity={1}
+                            style={styles.modalContent}
+                            onPress={(e) => e.stopPropagation()}
+                        >
+                            <View style={styles.modalHandle} />
+
+                            <View style={styles.modalHeader}>
+                                <Text style={styles.modalTitle}>Profile Photo</Text>
+                                <Text style={styles.modalSubtitle}>
+                                    Take a new photo or select one from files & gallery
+                                </Text>
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.menuOption}
+                                activeOpacity={0.7}
+                                onPress={handleTakePhoto}
+                            >
+                                <View style={[styles.menuIconBox, { backgroundColor: '#FFF5F0' }]}>
+                                    <Camera size={22} color="#E65F2B" />
+                                </View>
+                                <View style={styles.menuTextBox}>
+                                    <Text style={styles.menuOptionTitle}>Take Photo</Text>
+                                    <Text style={styles.menuOptionSubtitle}>Use your phone camera</Text>
+                                </View>
+                                <ChevronRight size={18} color="#D1D5DB" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.menuOption}
+                                activeOpacity={0.7}
+                                onPress={handlePickFromGallery}
+                            >
+                                <View style={[styles.menuIconBox, { backgroundColor: '#F0FDF4' }]}>
+                                    <ImageIcon size={22} color="#15803D" />
+                                </View>
+                                <View style={styles.menuTextBox}>
+                                    <Text style={styles.menuOptionTitle}>Choose from Gallery / Files</Text>
+                                    <Text style={styles.menuOptionSubtitle}>Browse photos or stored documents</Text>
+                                </View>
+                                <ChevronRight size={18} color="#D1D5DB" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={styles.modalCancelBtn}
+                                activeOpacity={0.7}
+                                onPress={() => setIsPhotoModalVisible(false)}
+                            >
+                                <Text style={styles.modalCancelText}>Cancel</Text>
+                            </TouchableOpacity>
+                        </TouchableOpacity>
+                    </TouchableOpacity>
+                </Modal>
 
             </SafeAreaView>
 
@@ -467,6 +660,113 @@ const styles = StyleSheet.create({
         fontSize: 14,
         fontWeight: '700',
         color: '#15803D',
+    },
+
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'flex-end',
+    },
+
+    modalContent: {
+        backgroundColor: '#FFFFFF',
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
+        paddingHorizontal: 20,
+        paddingTop: 12,
+        paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    },
+
+    modalHandle: {
+        width: 38,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#E5E7EB',
+        alignSelf: 'center',
+        marginBottom: 16,
+    },
+
+    modalHeader: {
+        marginBottom: 20,
+        paddingHorizontal: 4,
+    },
+
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        color: '#1F2937',
+        marginBottom: 4,
+    },
+
+    modalSubtitle: {
+        fontSize: 13,
+        color: '#6B7280',
+    },
+
+    menuOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        backgroundColor: '#F9FAFB',
+        borderRadius: 16,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#F3F4F6',
+    },
+
+    menuIconBox: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 14,
+    },
+
+    menuTextBox: {
+        flex: 1,
+    },
+
+    menuOptionTitle: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#1F2937',
+        marginBottom: 2,
+    },
+
+    menuOptionSubtitle: {
+        fontSize: 12,
+        color: '#6B7280',
+    },
+
+    modalCancelBtn: {
+        marginTop: 6,
+        paddingVertical: 14,
+        borderRadius: 16,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#F3F4F6',
+    },
+
+    modalCancelText: {
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#4B5563',
+    },
+
+    loadingBadge: {
+        position: 'absolute',
+        bottom: 2,
+        right: 2,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: '#E65F2B',
+        borderWidth: 2,
+        borderColor: '#FFFFFF',
     },
 
 });

@@ -30,10 +30,10 @@ export default function EditBudgetModal({
   setCurrency,
 }: Props) {
   const { currency: globalCurrency, setCurrency: setGlobalCurrency } = useUser();
-  const [budget, setBudget] = useState(currentBudget.toString());
+  const [budget, setBudget] = useState(currentBudget > 0 ? currentBudget.toString() : "");
 
   useEffect(() => {
-    setBudget(currentBudget.toString());
+    setBudget(currentBudget > 0 ? currentBudget.toString() : "");
   }, [currentBudget]);
 
   const currencies = [

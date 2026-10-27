@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     StyleSheet,
     Text,
@@ -139,6 +140,26 @@ export default function ShoppingHistoryScreen() {
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+    const [ordersList, setOrdersList] = useState<ShoppingOrder[]>([]);
+
+    useEffect(() => {
+        let isMounted = true;
+        async function loadOrders() {
+            try {
+                const saved = await AsyncStorage.getItem('@app_shopping_orders');
+                if (saved && isMounted) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed)) {
+                        setOrdersList(parsed);
+                        return;
+                    }
+                }
+            } catch (e) {}
+            if (isMounted) setOrdersList([]);
+        }
+        loadOrders();
+        return () => { isMounted = false; };
+    }, []);
 
     const toggleExpandOrder = (id: string) => {
         setExpandedOrderId(prev => (prev === id ? null : id));
@@ -155,7 +176,7 @@ export default function ShoppingHistoryScreen() {
     // Filter orders
     const filteredOrders = useMemo(() => {
         const query = searchQuery.trim().toLowerCase();
-        return ORDERS_DATA.filter((order) => {
+        return ordersList.filter((order) => {
             const matchesCat = selectedCategory === 'All' || order.storeCategory === selectedCategory;
             const matchesQuery =
                 !query ||
@@ -164,7 +185,7 @@ export default function ShoppingHistoryScreen() {
                 order.items.some(item => item.name.toLowerCase().includes(query));
             return matchesCat && matchesQuery;
         });
-    }, [searchQuery, selectedCategory]);
+    }, [ordersList, searchQuery, selectedCategory]);
 
     // Calculate totals
     const totalSpent = filteredOrders.reduce((sum, o) => sum + o.totalAmount, 0);
@@ -290,10 +311,23 @@ export default function ShoppingHistoryScreen() {
                         {filteredOrders.length === 0 ? (
                             <View style={styles.emptyState}>
                                 <ShoppingBag size={48} color="#D1D5DB" />
-                                <Text style={styles.emptyTitle}>No orders found</Text>
-                                <Text style={styles.emptySubtitle}>
-                                    No receipts matched your search or category filter.
+                                <Text style={styles.emptyTitle}>
+                                    {searchQuery ? 'No orders found' : 'No shopping history yet'}
                                 </Text>
+                                <Text style={styles.emptySubtitle}>
+                                    {searchQuery
+                                        ? 'No receipts matched your search or category filter.'
+                                        : 'Receipts and past purchases will appear here once you start shopping.'}
+                                </Text>
+                                {!searchQuery && (
+                                    <TouchableOpacity
+                                        style={styles.startShoppingBtn}
+                                        onPress={() => router.push('/home')}
+                                        activeOpacity={0.8}
+                                    >
+                                        <Text style={styles.startShoppingBtnText}>Start Shopping</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
                         ) : (
                             filteredOrders.map((order) => {
@@ -714,5 +748,17 @@ const styles = StyleSheet.create({
         color: '#9CA3AF',
         textAlign: 'center',
         maxWidth: 260,
+    },
+    startShoppingBtn: {
+        marginTop: 16,
+        paddingHorizontal: 20,
+        paddingVertical: 10,
+        backgroundColor: '#E65F2B',
+        borderRadius: 14,
+    },
+    startShoppingBtnText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '600',
     },
 });

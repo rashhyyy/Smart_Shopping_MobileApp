@@ -1,4 +1,5 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
     StyleSheet,
     Text,
@@ -184,6 +185,26 @@ export default function SavedDiscountsScreen() {
     const [selectedCategory, setSelectedCategory] = useState('All');
     const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
     const [activeBarcodeItem, setActiveBarcodeItem] = useState<DiscountItem | null>(null);
+    const [discountsList, setDiscountsList] = useState<DiscountItem[]>([]);
+
+    useEffect(() => {
+        let isMounted = true;
+        async function loadDiscounts() {
+            try {
+                const saved = await AsyncStorage.getItem('@app_saved_discounts');
+                if (saved && isMounted) {
+                    const parsed = JSON.parse(saved);
+                    if (Array.isArray(parsed)) {
+                        setDiscountsList(parsed);
+                        return;
+                    }
+                }
+            } catch (e) {}
+            if (isMounted) setDiscountsList([]);
+        }
+        loadDiscounts();
+        return () => { isMounted = false; };
+    }, []);
 
     const handleBack = () => {
         if (router.canGoBack()) {
@@ -202,7 +223,7 @@ export default function SavedDiscountsScreen() {
     };
 
     const filteredDiscounts = useMemo(() => {
-        return DISCOUNTS_DATA.filter(item => {
+        return discountsList.filter(item => {
             const matchesCategory =
                 selectedCategory === 'All'
                     ? true
@@ -219,13 +240,13 @@ export default function SavedDiscountsScreen() {
 
             return matchesCategory && matchesSearch;
         });
-    }, [selectedCategory, searchQuery]);
+    }, [discountsList, selectedCategory, searchQuery]);
 
-    const totalSavingsAvailable = DISCOUNTS_DATA.reduce(
+    const totalSavingsAvailable = discountsList.reduce(
         (sum, item) => sum + item.estimatedSavings,
         0
     );
-    const expiringSoonCount = DISCOUNTS_DATA.filter(item => item.isExpiringSoon).length;
+    const expiringSoonCount = discountsList.filter(item => item.isExpiringSoon).length;
 
     return (
         <SafeAreaProvider>
@@ -244,13 +265,13 @@ export default function SavedDiscountsScreen() {
                     <View style={styles.headerTitleContainer}>
                         <Text style={styles.headerTitle}>Saved Discounts</Text>
                         <Text style={styles.headerSubtitle}>
-                            {DISCOUNTS_DATA.length} active coupons & promo vouchers
+                            {discountsList.length} active coupons & promo vouchers
                         </Text>
                     </View>
 
                     <View style={styles.countBadge}>
                         <Tag size={14} color="#E65F2B" />
-                        <Text style={styles.countBadgeText}>{DISCOUNTS_DATA.length}</Text>
+                        <Text style={styles.countBadgeText}>{discountsList.length}</Text>
                     </View>
                 </View>
 
@@ -355,21 +376,27 @@ export default function SavedDiscountsScreen() {
                             <View style={styles.emptyIconCircle}>
                                 <Tag size={36} color="#9CA3AF" />
                             </View>
-                            <Text style={styles.emptyTitle}>No Discounts Found</Text>
+                            <Text style={styles.emptyTitle}>
+                                {searchQuery || selectedCategory !== 'All' ? 'No Discounts Found' : 'No Saved Discounts Yet'}
+                            </Text>
                             <Text style={styles.emptySubtitle}>
                                 {searchQuery
                                     ? `No coupons match "${searchQuery}".`
-                                    : 'No active coupons in this category right now.'}
+                                    : selectedCategory !== 'All'
+                                    ? 'No active coupons in this category right now.'
+                                    : 'Saved vouchers and promo codes will appear here.'}
                             </Text>
-                            <TouchableOpacity
-                                style={styles.resetFilterBtn}
-                                onPress={() => {
-                                    setSearchQuery('');
-                                    setSelectedCategory('All');
-                                }}
-                            >
-                                <Text style={styles.resetFilterBtnText}>Reset Filter</Text>
-                            </TouchableOpacity>
+                            {(searchQuery || selectedCategory !== 'All') && (
+                                <TouchableOpacity
+                                    style={styles.resetFilterBtn}
+                                    onPress={() => {
+                                        setSearchQuery('');
+                                        setSelectedCategory('All');
+                                    }}
+                                >
+                                    <Text style={styles.resetFilterBtnText}>Reset Filter</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     )}
 

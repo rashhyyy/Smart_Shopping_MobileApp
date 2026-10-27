@@ -48,7 +48,7 @@ export default function Index() {
 
   // ✅ ROUTER
   const router = useRouter();
-  const { currency, cartItems, totalCartSpend, user } = useUser();
+  const { currency, cartItems, totalCartSpend, user, monthlyBudget } = useUser();
   const sym = currency?.symbol || '$';
 
   // Dynamic real-time greeting
@@ -64,10 +64,10 @@ export default function Index() {
   }, []);
 
   // Dynamic values
-  const totalSpent = cartItems && cartItems.length > 0 ? totalCartSpend : 1121;
-  const budgetLimit = 2500;
+  const totalSpent = cartItems && cartItems.length > 0 ? totalCartSpend : 0;
+  const budgetLimit = (monthlyBudget && monthlyBudget > 0) ? monthlyBudget : 0;
 
-  // Dynamic savings from active cart discounts or fallback
+  // Dynamic savings from active cart discounts
   const totalCartSavings = (cartItems || []).reduce((acc, item) => {
     if (item.discount && item.discount > 0) {
       const origPrice = item.price / (1 - item.discount / 100);
@@ -76,13 +76,12 @@ export default function Index() {
     return acc;
   }, 0);
 
-  const displaySavings = totalCartSavings > 0 ? Math.round(totalCartSavings).toLocaleString() : '128';
+  const displaySavings = totalCartSavings > 0 ? Math.round(totalCartSavings).toLocaleString() : '0';
 
   // Percentage Calculation
-  const percentage = Math.min(
-    Math.round((totalSpent / budgetLimit) * 100),
-    100
-  );
+  const percentage = budgetLimit > 0
+    ? Math.min(Math.round((totalSpent / budgetLimit) * 100), 100)
+    : 0;
 
   // SVG Config
   const size = 100;
@@ -134,12 +133,16 @@ export default function Index() {
         >
 
           {/* ================= BUDGET CARD ================= */}
-          <LinearGradient
-            colors={["#FF8A00", "#FF5E00"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.budgetCard}
+          <TouchableOpacity
+            activeOpacity={0.9}
+            onPress={() => router.push('/budget')}
           >
+            <LinearGradient
+              colors={["#FF8A00", "#FF5E00"]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.budgetCard}
+            >
 
             <View style={styles.budgetTextSection}>
 
@@ -166,7 +169,7 @@ export default function Index() {
                   <Text style={styles.badgeText}>
                     {cartItems && cartItems.length > 0
                       ? `${cartItems.reduce((s, i) => s + i.quantity, 0)} Items`
-                      : '8 Items'}
+                      : '0 Items'}
                   </Text>
                 </View>
 
@@ -179,7 +182,7 @@ export default function Index() {
                   <Text style={styles.badgeText}>
                     {cartItems && cartItems.filter(i => (i.discount || 0) > 0).length > 0
                       ? `${cartItems.filter(i => (i.discount || 0) > 0).length} Discounts`
-                      : '3 Discounts'}
+                      : '0 Discounts'}
                   </Text>
                 </View>
 
@@ -230,14 +233,19 @@ export default function Index() {
 
             </View>
 
-          </LinearGradient>
+            </LinearGradient>
+          </TouchableOpacity>
 
           {/* ================= QUICK ACTIONS ================= */}
           <View style={styles.headerCard}>
 
             <View style={styles.actionRow}>
 
-              <TouchableOpacity style={styles.actionButton}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => router.push('/Scan')}
+                activeOpacity={0.7}
+              >
                 <View
                   style={[
                     styles.iconContainer,
@@ -349,98 +357,15 @@ export default function Index() {
               </TouchableOpacity>
             ))
           ) : (
-            <>
-              {/* ITEM 1 */}
-              <View style={styles.itemCard}>
-                <View
-                  style={[
-                    styles.itemIconBadge,
-                    { backgroundColor: '#FFF5F0' },
-                  ]}
-                >
-                  <Scan size={18} color="#E65F2B" />
-                </View>
-                <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>
-                    Organic Almonds 250g
-                  </Text>
-                  <Text style={styles.itemDetails}>
-                    Groceries · 2 min ago
-                  </Text>
-                </View>
-                <View style={styles.priceContainer}>
-                  <Text style={styles.priceText}>
-                    {sym}349
-                  </Text>
-                  <Text
-                    style={[
-                      styles.discountText,
-                      { color: '#E11D48' },
-                    ]}
-                  >
-                    -12.5%
-                  </Text>
-                </View>
+            <View style={styles.emptyItemsCard}>
+              <View style={styles.emptyIconCircle}>
+                <ShoppingBag size={24} color="#9CA3AF" />
               </View>
-
-              {/* ITEM 2 */}
-              <View style={styles.itemCard}>
-                <View
-                  style={[
-                    styles.itemIconBadge,
-                    { backgroundColor: '#F0FDF4' },
-                  ]}
-                >
-                  <Mic size={18} color="#15803D" />
-                </View>
-                <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>
-                    Fresh Milk 1L
-                  </Text>
-                  <Text style={styles.itemDetails}>
-                    Dairy · 5 min ago
-                  </Text>
-                </View>
-                <View style={styles.priceContainer}>
-                  <Text style={styles.priceText}>
-                    {sym}144
-                  </Text>
-                </View>
-              </View>
-
-              {/* ITEM 3 */}
-              <View style={styles.itemCard}>
-                <View
-                  style={[
-                    styles.itemIconBadge,
-                    { backgroundColor: '#FFF5F0' },
-                  ]}
-                >
-                  <Scan size={18} color="#E65F2B" />
-                </View>
-                <View style={styles.itemInfo}>
-                  <Text style={styles.itemName}>
-                    Whole Wheat Bread
-                  </Text>
-                  <Text style={styles.itemDetails}>
-                    Bakery · 8 min ago
-                  </Text>
-                </View>
-                <View style={styles.priceContainer}>
-                  <Text style={styles.priceText}>
-                    {sym}45
-                  </Text>
-                  <Text
-                    style={[
-                      styles.discountText,
-                      { color: '#E11D48' },
-                    ]}
-                  >
-                    -18%
-                  </Text>
-                </View>
-              </View>
-            </>
+              <Text style={styles.emptyTitle}>No items scanned yet</Text>
+              <Text style={styles.emptySubtitle}>
+                Tap Scan or Voice below to start adding your shopping items!
+              </Text>
+            </View>
           )}
 
           {/* ================= SAVINGS BANNER ================= */}
@@ -799,5 +724,35 @@ const styles = StyleSheet.create({
     color: '#E65F2B',
     fontWeight: '700',
     marginTop: 0,
+  },
+  emptyItemsCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+  },
+  emptyIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#374151',
+    marginBottom: 4,
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#9CA3AF',
+    textAlign: 'center',
   },
 });

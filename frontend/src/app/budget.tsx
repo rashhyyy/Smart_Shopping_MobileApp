@@ -5,7 +5,8 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
-import { useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 
@@ -18,19 +19,68 @@ import { LayoutGrid, Scan, PlusCircle, ShoppingBag, PieChart, ArrowLeft } from "
 
 import { useUser } from "../context/UserContext";
 
-type Category = {
+export type CategoryItem = {
+    id: string;
     name: string;
-    amount: number;
+    icon: string;
     color: string;
+    lightBg: string;
+    amount: number;
+    itemCount: number;
+    isCustom?: boolean;
+};
+
+// All 10 standard categories matching AddScreen.tsx
+export const STANDARD_CATEGORIES = [
+    { id: 'grocery', name: 'Grocery', icon: '🛒', color: '#FF6B00', lightBg: '#FFF0E6' },
+    { id: 'beverage', name: 'Beverage', icon: '🥤', color: '#00B8D9', lightBg: '#E6F8FA' },
+    { id: 'snacks', name: 'Snacks', icon: '🍿', color: '#F59E0B', lightBg: '#FEF3C7' },
+    { id: 'dairy', name: 'Dairy', icon: '🥛', color: '#3B82F6', lightBg: '#EFF6FF' },
+    { id: 'produce', name: 'Produce', icon: '🥦', color: '#10B981', lightBg: '#ECFDF5' },
+    { id: 'bakery', name: 'Bakery', icon: '🍞', color: '#D97706', lightBg: '#FFFBEB' },
+    { id: 'meat', name: 'Meat', icon: '🥩', color: '#EF4444', lightBg: '#FEF2F2' },
+    { id: 'personal', name: 'Personal', icon: '🧴', color: '#EC4899', lightBg: '#FDF2F8' },
+    { id: 'household', name: 'Household', icon: '🏠', color: '#8B5CF6', lightBg: '#F5F3FF' },
+    { id: 'other', name: 'Other', icon: '📦', color: '#6B7280', lightBg: '#F3F4F6' },
+];
+
+const STORAGE_KEYS = {
+    CUSTOM_CATS: '@app_budget_custom_categories_v2',
+    MANUAL_ADJ: '@app_budget_manual_adjustments_v2',
+};
+
+// Helper to normalize category strings across AddScreen and voice
+const normalizeCategory = (cat?: string): string => {
+    if (!cat) return 'grocery';
+    const c = cat.trim().toLowerCase();
+    if (c === 'groceries' || c === 'grocery') return 'grocery';
+    if (c === 'beverages' || c === 'beverage' || c === 'drinks' || c === 'drink') return 'beverage';
+    if (c === 'snack' || c === 'snacks') return 'snacks';
+    if (c === 'dairy' || c === 'milk') return 'dairy';
+    if (c === 'produce' || c === 'fruits' || c === 'vegetables' || c === 'veggies') return 'produce';
+    if (c === 'bakery' || c === 'bread') return 'bakery';
+    if (c === 'meat' || c === 'meats' || c === 'seafood') return 'meat';
+    if (c === 'personal' || c === 'personal care') return 'personal';
+    if (c === 'household' || c === 'cleaning') return 'household';
+    if (c === 'other' || c === 'others') return 'other';
+    return c;
 };
 
 export default function BudgetScreen() {
     const router = useRouter();
-    const { currency: globalCurrency } = useUser();
+    const {
+        currency: globalCurrency,
+        monthlyBudget,
+        setMonthlyBudget,
+        cartItems,
+        customCategories,
+        addCustomCategory,
+        deleteCustomCategory,
+    } = useUser();
     const currency = globalCurrency?.symbol || "$";
 
-    // Budget State
-    const [budget, setBudget] = useState(2500);
+    // Budget State synced globally with Home and UserContext
+    const budget = monthlyBudget || 0;
 
     // Modals Visibility State
     const [expenseModalVisible, setExpenseModalVisible] = useState(false);
@@ -38,25 +88,163 @@ export default function BudgetScreen() {
     const [categoryModalVisible, setCategoryModalVisible] = useState(false);
 
     // Selected Category State
-    const [selectedCategory, setSelectedCategory] = useState<Category | null>(null);
+    const [selectedCategory, setSelectedCategory] = useState<CategoryItem | null>(null);
 
-    // Categories State
-    const [categories, setCategories] = useState<Category[]>([
-        { name: "Groceries", amount: 349, color: "#FF6B00" },
-        { name: "Dairy", amount: 312, color: "#7ED321" },
-        { name: "Bakery", amount: 45, color: "#E6B800" },
-        { name: "Household", amount: 285, color: "#00B8D9" },
-        { name: "Produce", amount: 280, color: "#FF3B6B" },
-    ]);
+    // Manual adjustments made through EditCategoryModal
+    const [manualAdjustments, setManualAdjustments] = useState<Record<string, number>>({});
+
+    // Restore saved manual adjustments
+    useEffect(() => {
+        let isMounted = true;
+        AsyncStorage.getItem(STORAGE_KEYS.MANUAL_ADJ).then((manualSaved) => {
+            if (!isMounted) return;
+            if (manualSaved) {
+                try {
+                    const parsed = JSON.parse(manualSaved);
+                    if (parsed && typeof parsed === 'object') setManualAdjustments(parsed);
+                } catch (e) {}
+            }
+        });
+        return () => {
+            isMounted = false;
+        };
+    }, []);
+
+    // Dynamically calculate live spend & item counts from cartItems for each category
+    const categories: CategoryItem[] = useMemo(() => {
+        const allDefs = [
+            ...STANDARD_CATEGORIES,
+            ...customCategories.map(c => ({
+                id: c.id,
+                name: c.name,
+                icon: c.icon || '🏷️',
+                color: c.color || '#FF6B00',
+                lightBg: c.lightBg || 'rgba(255, 107, 0, 0.12)',
+                isCustom: true,
+            })),
+        ];
+
+        return allDefs.map(cat => {
+            let cartSpend = 0;
+            let itemCount = 0;
+
+            (cartItems || []).forEach(item => {
+                const itemCat = normalizeCategory(item.category);
+                if (itemCat === cat.id.toLowerCase() || itemCat === cat.name.toLowerCase()) {
+                    const p = Number(item.price) || 0;
+                    const q = Number(item.quantity) || 1;
+                    cartSpend += p * q;
+                    itemCount += q;
+                }
+            });
+
+            const manual = manualAdjustments[cat.id] ?? manualAdjustments[cat.name] ?? 0;
+            const totalAmount = Math.max(0, cartSpend + manual);
+
+            return {
+                id: cat.id,
+                name: cat.name,
+                icon: cat.icon,
+                color: cat.color,
+                lightBg: cat.lightBg,
+                amount: totalAmount,
+                itemCount,
+                isCustom: 'isCustom' in cat ? Boolean(cat.isCustom) : false,
+            };
+        });
+    }, [cartItems, customCategories, manualAdjustments]);
 
     // Financial Calculations
-    const totalExpenses = categories.reduce(
-        (total, item) => total + item.amount,
-        0,
-    );
+    const totalExpenses = useMemo(() => {
+        return categories.reduce((total, item) => total + item.amount, 0);
+    }, [categories]);
 
-    const remainingBudget = budget - totalExpenses;
+    const activeCategoriesCount = useMemo(() => {
+        return categories.filter(c => c.amount > 0 || c.itemCount > 0).length;
+    }, [categories]);
+
+    const remainingBudget = Math.max(0, budget - totalExpenses);
     const progress = budget > 0 ? (totalExpenses / budget) * 100 : 0;
+
+    // Weekly spending chart calculations from real cart items
+    const weeklyData = useMemo(() => {
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const todayIndex = new Date().getDay();
+        const orderedDayIndices = [1, 2, 3, 4, 5, 6, 0]; // Mon .. Sun
+
+        const daySpends = orderedDayIndices.map(dayIdx => {
+            return {
+                day: dayNames[dayIdx],
+                amount: 0,
+                isToday: dayIdx === todayIndex,
+            };
+        });
+
+        (cartItems || []).forEach(item => {
+            try {
+                const itemDate = new Date(item.capturedAt);
+                if (!isNaN(itemDate.getTime())) {
+                    const dayIdx = itemDate.getDay();
+                    const target = daySpends.find(d => d.day === dayNames[dayIdx]);
+                    if (target) {
+                        target.amount += (Number(item.price) || 0) * (Number(item.quantity) || 1);
+                    }
+                }
+            } catch (e) {}
+        });
+
+        const hasAnySpend = daySpends.some(d => d.amount > 0);
+        if (!hasAnySpend && totalExpenses > 0) {
+            const todayTarget = daySpends.find(d => d.isToday);
+            if (todayTarget) {
+                todayTarget.amount = totalExpenses;
+            }
+        }
+
+        const maxSpend = Math.max(...daySpends.map(d => d.amount), 1);
+
+        return daySpends.map(d => ({
+            ...d,
+            barHeight: totalExpenses > 0 && d.amount > 0
+                ? Math.max(26, Math.min(140, Math.round((d.amount / maxSpend) * 140)))
+                : 8,
+        }));
+    }, [cartItems, totalExpenses]);
+
+    // Handle editing category amount
+    const handleSaveCategoryAmount = (newAmount: number) => {
+        if (!selectedCategory) return;
+        const updated = { ...manualAdjustments, [selectedCategory.id]: newAmount };
+        setManualAdjustments(updated);
+        AsyncStorage.setItem(STORAGE_KEYS.MANUAL_ADJ, JSON.stringify(updated)).catch(() => {});
+    };
+
+    // Handle deleting category
+    const handleDeleteCategory = () => {
+        if (!selectedCategory) return;
+        if (selectedCategory.isCustom) {
+            deleteCustomCategory(selectedCategory.id);
+        }
+        const updatedAdj = { ...manualAdjustments };
+        delete updatedAdj[selectedCategory.id];
+        setManualAdjustments(updatedAdj);
+        AsyncStorage.setItem(STORAGE_KEYS.MANUAL_ADJ, JSON.stringify(updatedAdj)).catch(() => {});
+    };
+
+    // Handle adding custom category
+    const handleAddCategory = (newCat: { name: string; amount: number; color: string; icon?: string }) => {
+        const created = addCustomCategory({
+            name: newCat.name,
+            icon: newCat.icon,
+            color: newCat.color,
+        });
+
+        if (newCat.amount > 0) {
+            const updatedAdj = { ...manualAdjustments, [created.id]: newCat.amount };
+            setManualAdjustments(updatedAdj);
+            AsyncStorage.setItem(STORAGE_KEYS.MANUAL_ADJ, JSON.stringify(updatedAdj)).catch(() => {});
+        }
+    };
 
     return (
         <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
@@ -92,7 +280,7 @@ export default function BudgetScreen() {
                         <Text style={styles.budgetLabel}>MONTHLY BUDGET</Text>
 
                         <Text style={styles.budgetAmount}>
-                            {currency} {budget}
+                            {currency} {budget.toLocaleString()}
                         </Text>
 
                         {/* Progress */}
@@ -107,10 +295,10 @@ export default function BudgetScreen() {
 
                         <View style={styles.budgetRow}>
                             <Text style={styles.smallText}>
-                                {currency} {totalExpenses} spent
+                                {currency} {totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} spent
                             </Text>
                             <Text style={styles.smallText}>
-                                {currency} {remainingBudget} left
+                                {currency} {remainingBudget.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })} left
                             </Text>
                         </View>
                     </LinearGradient>
@@ -127,7 +315,10 @@ export default function BudgetScreen() {
                         </View>
                         <Text style={styles.analyticsTitle}>Total Savings</Text>
                         <Text style={styles.analyticsAmount}>
-                            {currency} {remainingBudget}
+                            {currency} {remainingBudget.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                        </Text>
+                        <Text style={styles.analyticsSubtitle}>
+                            {budget > 0 ? `${Math.round((remainingBudget / budget) * 100)}% of budget left` : 'Set budget to track'}
                         </Text>
                     </View>
 
@@ -136,53 +327,83 @@ export default function BudgetScreen() {
                             <Text style={styles.analyticsIcon}>🔥</Text>
                         </View>
                         <Text style={styles.analyticsTitle}>Categories</Text>
-                        <Text style={styles.analyticsAmount}>{categories.length}</Text>
+                        <Text style={styles.analyticsAmount}>
+                            {activeCategoriesCount > 0 ? `${activeCategoriesCount} / ${categories.length}` : `${categories.length}`}
+                        </Text>
+                        <Text style={styles.analyticsSubtitle}>
+                            {activeCategoriesCount > 0 ? `${activeCategoriesCount} with items` : '10 available'}
+                        </Text>
                     </View>
                 </View>
 
                 {/* Categories Header */}
-                <Text style={styles.sectionTitle}>Category Breakdown</Text>
+                <View style={styles.sectionHeaderRow}>
+                    <Text style={styles.sectionTitle}>Category Breakdown</Text>
+                    <View style={styles.countBadge}>
+                        <Text style={styles.countBadgeText}>{categories.length} Categories</Text>
+                    </View>
+                </View>
 
-                {/* Category List Items */}
-                {categories.map((item, index) => {
+                {/* Category List Items - Showing all 10 categories clearly with icons, amounts & counts */}
+                {categories.map((item) => {
                     const percentage = totalExpenses > 0 ? (item.amount / totalExpenses) * 100 : 0;
 
                     return (
                         <TouchableOpacity
-                            key={index}
-                            style={styles.categoryItem}
+                            key={item.id}
+                            style={styles.categoryCard}
                             activeOpacity={0.8}
                             onPress={() => {
                                 setSelectedCategory(item);
                                 setCategoryModalVisible(true);
                             }}
                         >
-                            <View style={styles.categoryTop}>
-                                <View style={styles.categoryLeft}>
-                                    <View
-                                        style={[styles.sideBar, { backgroundColor: item.color }]}
-                                    />
-                                    <Text style={styles.categoryName}>{item.name}</Text>
+                            <View style={styles.categoryHeaderRow}>
+                                {/* Left side: Emoji badge & Category title & Items count */}
+                                <View style={styles.categoryLeftGroup}>
+                                    <View style={[styles.categoryIconBadge, { backgroundColor: item.lightBg }]}>
+                                        <Text style={styles.categoryEmoji}>{item.icon}</Text>
+                                    </View>
+                                    <View style={styles.categoryTitleGroup}>
+                                        <Text style={styles.categoryNameText}>{item.name}</Text>
+                                        <Text style={styles.categoryItemSubtext}>
+                                            {item.itemCount > 0
+                                                ? `${item.itemCount} ${item.itemCount === 1 ? 'item' : 'items'} in cart`
+                                                : 'No items added'}
+                                        </Text>
+                                    </View>
                                 </View>
 
-                                <View style={{ alignItems: "flex-end" }}>
-                                    <Text style={styles.categoryPrice}>
-                                        {currency} {item.amount}
+                                {/* Right side: Amount & percentage pill */}
+                                <View style={styles.categoryRightGroup}>
+                                    <Text style={[
+                                        styles.categoryPriceText,
+                                        item.amount > 0 ? styles.categoryPriceActive : styles.categoryPriceMuted,
+                                    ]}>
+                                        {currency} {item.amount.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                                     </Text>
-                                    <Text style={styles.categoryPercent}>
-                                        {percentage.toFixed(0)}%
-                                    </Text>
+                                    <View style={[
+                                        styles.categoryPercentPill,
+                                        item.amount > 0 ? { backgroundColor: item.lightBg } : { backgroundColor: '#F3F4F6' },
+                                    ]}>
+                                        <Text style={[
+                                            styles.categoryPercentText,
+                                            item.amount > 0 ? { color: item.color } : { color: '#9CA3AF' },
+                                        ]}>
+                                            {percentage.toFixed(0)}%
+                                        </Text>
+                                    </View>
                                 </View>
                             </View>
 
                             {/* Category Progress Horizontal Bar */}
-                            <View style={styles.categoryBarBg}>
+                            <View style={styles.categoryProgressTrack}>
                                 <View
                                     style={[
-                                        styles.categoryBarFill,
+                                        styles.categoryProgressFill,
                                         {
-                                            width: `${percentage}%`,
-                                            backgroundColor: item.color,
+                                            width: `${Math.min(percentage, 100)}%`,
+                                            backgroundColor: item.amount > 0 ? item.color : '#E5E7EB',
                                         },
                                     ]}
                                 />
@@ -197,23 +418,30 @@ export default function BudgetScreen() {
                 {/* Visual Bar Chart Box */}
                 <View style={styles.chartBox}>
                     <View style={styles.graphContainer}>
-                        <View style={[styles.bar, { height: 60 }]} />
-                        <View style={[styles.bar, { height: 100 }]} />
-                        <View style={[styles.bar, { height: 80 }]} />
-                        <View style={[styles.bar, { height: 140 }]} />
-                        <View style={[styles.bar, { height: 120 }]} />
-                        <View style={[styles.bar, { height: 160 }]} />
-                        <View style={[styles.bar, { height: 130 }]} />
+                        {weeklyData.map((d, idx) => (
+                            <View key={idx} style={styles.barColumn}>
+                                <View
+                                    style={[
+                                        styles.bar,
+                                        {
+                                            height: d.barHeight,
+                                            backgroundColor: d.isToday ? "#FF6B00" : (d.amount > 0 ? "#FFA366" : "#E5E7EB"),
+                                        },
+                                    ]}
+                                />
+                            </View>
+                        ))}
                     </View>
 
                     <View style={styles.daysRow}>
-                        <Text style={styles.day}>Mon</Text>
-                        <Text style={styles.day}>Tue</Text>
-                        <Text style={styles.day}>Wed</Text>
-                        <Text style={styles.day}>Thu</Text>
-                        <Text style={styles.day}>Fri</Text>
-                        <Text style={styles.day}>Sat</Text>
-                        <Text style={styles.activeDay}>Sun</Text>
+                        {weeklyData.map((d, idx) => (
+                            <Text
+                                key={idx}
+                                style={d.isToday ? styles.activeDay : styles.day}
+                            >
+                                {d.day}
+                            </Text>
+                        ))}
                     </View>
                 </View>
             </ScrollView>
@@ -230,16 +458,16 @@ export default function BudgetScreen() {
             <AddExpenseModal
                 visible={expenseModalVisible}
                 onClose={() => setExpenseModalVisible(false)}
-                onAdd={(newCategory: Category) => {
-                    setCategories([...categories, newCategory]);
-                }}
+                onAdd={handleAddCategory}
             />
 
             <EditBudgetModal
                 visible={budgetModalVisible}
                 onClose={() => setBudgetModalVisible(false)}
                 currentBudget={budget}
-                onSave={(newBudget: number) => setBudget(newBudget)}
+                onSave={(newBudget: number) => {
+                    setMonthlyBudget(newBudget);
+                }}
                 currency={currency}
             />
 
@@ -248,21 +476,8 @@ export default function BudgetScreen() {
                 onClose={() => setCategoryModalVisible(false)}
                 categoryName={selectedCategory?.name || ""}
                 currentAmount={selectedCategory?.amount || 0}
-                onSave={(newAmount: number) => {
-                    const updatedCategories = categories.map((cat) => {
-                        if (cat.name === selectedCategory?.name) {
-                            return { ...cat, amount: newAmount };
-                        }
-                        return cat;
-                    });
-                    setCategories(updatedCategories);
-                }}
-                onDelete={() => {
-                    const filtered = categories.filter(
-                        (cat) => cat.name !== selectedCategory?.name,
-                    );
-                    setCategories(filtered);
-                }}
+                onSave={handleSaveCategoryAmount}
+                onDelete={handleDeleteCategory}
             />
 
             {/* ─── FIXED BOTTOM TAB BAR ─── */}
@@ -353,6 +568,7 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 20,
         fontWeight: "700",
+        color: '#111827',
     },
     budgetCard: {
         borderRadius: 24,
@@ -378,6 +594,7 @@ const styles = StyleSheet.create({
         color: "white",
         fontSize: 13,
         fontWeight: "600",
+        letterSpacing: 0.5,
     },
     budgetAmount: {
         color: "white",
@@ -390,6 +607,7 @@ const styles = StyleSheet.create({
         height: 8,
         backgroundColor: "#FFA366",
         borderRadius: 10,
+        overflow: 'hidden',
     },
     progressFill: {
         height: 8,
@@ -404,151 +622,231 @@ const styles = StyleSheet.create({
     smallText: {
         color: "white",
         fontSize: 13,
+        fontWeight: "500",
     },
     analyticsRow: {
         flexDirection: "row",
         justifyContent: "space-between",
-        marginBottom: 25,
+        marginBottom: 22,
     },
     greenCard: {
         width: "48%",
         backgroundColor: "#E8F7EE",
-        borderRadius: 25,
-        padding: 20,
+        borderRadius: 22,
+        padding: 18,
     },
     yellowCard: {
         width: "48%",
         backgroundColor: "#FFF7E6",
-        borderRadius: 25,
-        padding: 20,
+        borderRadius: 22,
+        padding: 18,
     },
     smallIconBoxGreen: {
-        width: 52,
-        height: 52,
-        borderRadius: 16,
+        width: 46,
+        height: 46,
+        borderRadius: 14,
         backgroundColor: "#D3F2DF",
         justifyContent: "center",
         alignItems: "center",
-        marginBottom: 15,
+        marginBottom: 12,
     },
     smallIconBoxYellow: {
-        width: 52,
-        height: 52,
-        borderRadius: 16,
+        width: 46,
+        height: 46,
+        borderRadius: 14,
         backgroundColor: "#FFF0C7",
         justifyContent: "center",
         alignItems: "center",
-        marginBottom: 15,
+        marginBottom: 12,
     },
     analyticsIcon: {
-        fontSize: 24,
+        fontSize: 22,
     },
     analyticsTitle: {
-        fontSize: 16,
-        color: "#666",
+        fontSize: 14,
+        color: "#6B7280",
+        fontWeight: "600",
     },
     analyticsAmount: {
-        fontSize: 28,
-        fontWeight: "bold",
-        marginTop: 10,
+        fontSize: 22,
+        fontWeight: "800",
+        color: "#111827",
+        marginTop: 6,
+    },
+    analyticsSubtitle: {
+        fontSize: 11,
+        color: "#9CA3AF",
+        marginTop: 4,
+        fontWeight: "500",
+    },
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
     },
     sectionTitle: {
         fontSize: 18,
         fontWeight: '700',
-        marginBottom: 18,
+        color: '#111827',
     },
-    categoryItem: {
-        marginBottom: 20,
+    countBadge: {
+        backgroundColor: '#F3F4F6',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
     },
-    categoryTop: {
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 10,
+    countBadgeText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#6B7280',
     },
-    categoryLeft: {
-        flexDirection: "row",
-        alignItems: "center",
+    // Category Breakdown Card Styles
+    categoryCard: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 18,
+        padding: 14,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#F3F4F6',
+        shadowColor: '#000',
+        shadowOpacity: 0.03,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 1,
+    },
+    categoryHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    categoryLeftGroup: {
+        flexDirection: 'row',
+        alignItems: 'center',
         flex: 1,
     },
-    sideBar: {
-        width: 10,
-        height: 40,
-        borderRadius: 10,
+    categoryIconBadge: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
         marginRight: 12,
     },
-    categoryName: {
+    categoryEmoji: {
+        fontSize: 22,
+    },
+    categoryTitleGroup: {
+        flex: 1,
+    },
+    categoryNameText: {
         fontSize: 15,
-        fontWeight: '600',
+        fontWeight: '700',
+        color: '#1F2937',
     },
-    categoryPrice: {
+    categoryItemSubtext: {
+        fontSize: 12,
+        color: '#6B7280',
+        marginTop: 2,
+    },
+    categoryRightGroup: {
+        alignItems: 'flex-end',
+        marginLeft: 8,
+    },
+    categoryPriceText: {
         fontSize: 15,
-        fontWeight: 'bold',
+        fontWeight: '800',
     },
-    categoryPercent: {
-        color: "gray",
-        fontSize: 16,
-        marginTop: 3,
+    categoryPriceActive: {
+        color: '#111827',
     },
-    categoryBarBg: {
-        height: 10,
-        backgroundColor: "#EEEEEE",
-        borderRadius: 10,
-        marginLeft: 22,
+    categoryPriceMuted: {
+        color: '#9CA3AF',
     },
-    categoryBarFill: {
-        height: 10,
-        borderRadius: 10,
+    categoryPercentPill: {
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 8,
+        marginTop: 4,
     },
-
-    // 👇 UPDATED: Decreased bottom margin so it pulls close to the footer tab bar
+    categoryPercentText: {
+        fontSize: 11,
+        fontWeight: '700',
+    },
+    categoryProgressTrack: {
+        height: 6,
+        backgroundColor: '#F3F4F6',
+        borderRadius: 3,
+        marginTop: 10,
+        overflow: 'hidden',
+    },
+    categoryProgressFill: {
+        height: 6,
+        borderRadius: 3,
+    },
+    // Chart
     chartBox: {
-        height: 260,
-        backgroundColor: "#F7F7F7",
-        borderRadius: 30,
+        height: 230,
+        backgroundColor: "#F9FAFB",
+        borderRadius: 24,
         padding: 20,
-        marginBottom: 100, // Lowered from 140 to pull it down
+        marginTop: 14,
+        marginBottom: 100,
+        borderWidth: 1,
+        borderColor: '#F3F4F6',
     },
-
     graphContainer: {
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "flex-end",
         flex: 1,
-        marginBottom: 20,
+        marginBottom: 14,
+        paddingHorizontal: 6,
+    },
+    barColumn: {
+        alignItems: 'center',
+        flex: 1,
     },
     bar: {
-        width: 22,
-        backgroundColor: "#FF6B00",
-        borderRadius: 20,
+        width: 20,
+        borderRadius: 10,
     },
     daysRow: {
         flexDirection: "row",
         justifyContent: "space-between",
+        paddingHorizontal: 4,
     },
     day: {
-        color: "gray",
+        color: "#9CA3AF",
+        fontSize: 12,
+        fontWeight: '500',
     },
     activeDay: {
         color: "#FF6B00",
-        fontWeight: "bold",
+        fontWeight: "700",
+        fontSize: 12,
     },
     floatingButton: {
         position: "absolute",
-        bottom: 80,
-        right: 25,
-        width: 70,
-        height: 70,
-        borderRadius: 35,
+        bottom: 84,
+        right: 22,
+        width: 58,
+        height: 58,
+        borderRadius: 29,
         backgroundColor: "#FF6B00",
         justifyContent: "center",
         alignItems: "center",
+        shadowColor: '#FF6B00',
+        shadowOpacity: 0.35,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+        elevation: 6,
     },
     plus: {
         color: "white",
-        fontSize: 38,
+        fontSize: 32,
         fontWeight: "bold",
-        marginTop: -3,
+        marginTop: -2,
     },
     footerTabBar: {
         flexDirection: 'row',

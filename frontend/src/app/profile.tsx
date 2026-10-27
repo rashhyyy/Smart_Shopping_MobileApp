@@ -40,7 +40,28 @@ export default function Profile() {
 
     const router = useRouter();
 
-    const { user, currency, logoutUser } = useUser();
+    const {
+        user,
+        currency,
+        logoutUser,
+        scansCount,
+        totalCartItems,
+        streakDays,
+        totalCartSavings
+    } = useUser();
+
+    const formatMemberSince = (dateVal?: string): string => {
+        if (!dateVal) {
+            return new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        }
+        try {
+            const d = new Date(dateVal);
+            if (isNaN(d.getTime())) return dateVal;
+            return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        } catch {
+            return 'recently';
+        }
+    };
 
     const handleLogout = () => {
         Alert.alert(
@@ -195,7 +216,7 @@ export default function Profile() {
                         </Text>
 
                         <Text style={styles.membershipText}>
-                            Member since March 2025
+                            Member since {formatMemberSince(user?.memberSince)}
                         </Text>
 
                         {/* ================= EDIT BUTTON ================= */}
@@ -233,7 +254,7 @@ export default function Profile() {
                             </View>
 
                             <Text style={styles.gridValue}>
-                                847
+                                {(scansCount || 0).toLocaleString()}
                             </Text>
 
                             <Text style={styles.gridLabel}>
@@ -254,7 +275,7 @@ export default function Profile() {
                             </View>
 
                             <Text style={styles.gridValue}>
-                                1,324
+                                {(totalCartItems || 0).toLocaleString()}
                             </Text>
 
                             <Text style={styles.gridLabel}>
@@ -275,7 +296,7 @@ export default function Profile() {
                             </View>
 
                             <Text style={styles.gridValue}>
-                                {currency?.symbol || '$'}12,847
+                                {currency?.symbol || '$'}{Math.round(totalCartSavings || 0).toLocaleString()}
                             </Text>
 
                             <Text style={styles.gridLabel}>
@@ -296,7 +317,7 @@ export default function Profile() {
                             </View>
 
                             <Text style={styles.gridValue}>
-                                12d
+                                {streakDays || 0}d
                             </Text>
 
                             <Text style={styles.gridLabel}>

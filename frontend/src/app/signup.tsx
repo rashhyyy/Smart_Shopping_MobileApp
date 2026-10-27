@@ -46,7 +46,7 @@ export default function SignUpScreen() {
 
   useEffect(() => {
     if (!isLoadingSession && isLoggedIn && !isSuccessModalVisible) {
-      router.replace('/home');
+      router.replace('/Scan');
     }
   }, [isLoadingSession, isLoggedIn, isSuccessModalVisible]);
 
@@ -75,7 +75,7 @@ export default function SignUpScreen() {
         account.avatar ||
         'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
     });
-    router.replace('/home');
+    router.replace('/Scan');
   };
 
   const handleAppleAuth = async () => {
@@ -91,7 +91,7 @@ export default function SignUpScreen() {
               phone: '+91 98765 43210',
               avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
             });
-            router.replace('/home');
+            router.replace('/Scan');
           }
         }, 800);
       } else {
@@ -112,7 +112,7 @@ export default function SignUpScreen() {
                   phone: '+91 98765 43210',
                   avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
                 });
-                router.replace('/home');
+                router.replace('/Scan');
               },
             },
           ]
@@ -147,7 +147,7 @@ export default function SignUpScreen() {
     if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
     if (intervalTimerRef.current) clearInterval(intervalTimerRef.current);
     setIsSuccessModalVisible(false);
-    router.replace('/home');
+    router.replace('/Scan');
   };
 
   const handleSignUp = () => {
