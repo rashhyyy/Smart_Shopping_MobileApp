@@ -27,7 +27,7 @@ export default function ForgotPasswordScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="#FFF5F0" />
+      <StatusBar barStyle="dark-content" />
 
       {/* THE ONLY BACKGROUND IMAGE ASSET */}
       <Image

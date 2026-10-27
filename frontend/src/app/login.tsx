@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,26 +10,158 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  StatusBar
+  StatusBar,
+  ActivityIndicator,
+  Alert,
+  Linking,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import * as WebBrowser from 'expo-web-browser';
 // Professional vector icon packs built into Expo
 import { Ionicons, FontAwesome } from '@expo/vector-icons';
+import { useUser } from '../context/UserContext';
+import GoogleAccountChooserModal, { GoogleAccountItem } from '../components/GoogleAccountChooserModal';
 
 const { width, height } = Dimensions.get('window');
 
 export default function LoginScreen() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+  const params = useLocalSearchParams<{ registeredEmail?: string; accountCreated?: string }>();
+  const { authenticateUser, setUser, registeredUsers } = useUser();
+
+  const [email, setEmail] = useState(params.registeredEmail || '');
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleModalVisible, setIsGoogleModalVisible] = useState(false);
+
+  const showAlert = (title: string, message: string) => {
+    if (Platform.OS === 'web' && typeof window !== 'undefined' && window.alert) {
+      window.alert(`${title}: ${message}`);
+    } else {
+      Alert.alert(title, message);
+    }
+  };
+
+  const handleGoogleAuth = () => {
+    setIsGoogleModalVisible(true);
+  };
+
+  const handleSelectGoogleAccount = (account: GoogleAccountItem) => {
+    setIsGoogleModalVisible(false);
+    setUser({
+      fullName: account.fullName,
+      email: account.email,
+      phone: '+91 98765 43210',
+      avatar:
+        account.avatar ||
+        'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
+    });
+    router.replace('/home');
+  };
+
+  const handleAppleAuth = async () => {
+    const appleUrl = 'https://appleid.apple.com';
+    try {
+      if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        window.open(appleUrl, '_blank');
+        setTimeout(() => {
+          if (window.confirm('Signed in with Apple? Click OK to continue to Smart Shopping.')) {
+            setUser({
+              fullName: 'Apple User',
+              email: 'apple.user@icloud.com',
+              phone: '+91 98765 43210',
+              avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
+            });
+            router.replace('/home');
+          }
+        }, 800);
+      } else {
+        await WebBrowser.openBrowserAsync(appleUrl, {
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.AUTOMATIC,
+        });
+        Alert.alert(
+          'Apple Account',
+          'Did you sign in with your Apple account?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Continue to App',
+              onPress: () => {
+                setUser({
+                  fullName: 'Apple User',
+                  email: 'apple.user@icloud.com',
+                  phone: '+91 98765 43210',
+                  avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=100&q=80',
+                });
+                router.replace('/home');
+              },
+            },
+          ]
+        );
+      }
+    } catch (err) {
+      Linking.openURL(appleUrl);
+    }
+  };
+
+  const handleSignIn = () => {
+    setErrorMessage('');
+
+    const trimmedEmail = (email || '').trim();
+    if (!trimmedEmail) {
+      const msg = 'Please enter your email address.';
+      setErrorMessage(msg);
+      showAlert('Sign In Failed', msg);
+      return;
+    }
+
+    if (!password) {
+      const msg = 'Please enter your password.';
+      setErrorMessage(msg);
+      showAlert('Sign In Failed', msg);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      console.log('[Login] Verifying credentials for email:', trimmedEmail);
+      const authResult = authenticateUser(trimmedEmail, password);
+      console.log('[Login] Verification result:', authResult);
+
+      if (!authResult || !authResult.success) {
+        setIsSubmitting(false);
+        const errorMsg = (authResult && authResult.message) || 'Invalid email or password.';
+        setErrorMessage(errorMsg);
+        showAlert('Sign In Failed', errorMsg);
+        return;
+      }
+
+      // Successful authentication -> navigate to /home
+      setIsSubmitting(false);
+      router.replace('/home');
+    } catch (err: any) {
+      setIsSubmitting(false);
+      const errorMsg = 'An error occurred during sign in. Please try again.';
+      setErrorMessage(errorMsg);
+      showAlert('Sign In Error', errorMsg);
+    }
+  };
+
+  useEffect(() => {
+    if (params.registeredEmail) {
+      setEmail(params.registeredEmail);
+    }
+  }, [params.registeredEmail]);
 
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <StatusBar barStyle="dark-content" backgroundColor="#FFF5F0" />
+      <StatusBar barStyle="dark-content" />
 
       {/* THE ONLY BACKGROUND IMAGE ASSET */}
       <Image
@@ -73,6 +205,16 @@ export default function LoginScreen() {
         {/* Interactive White Input Form Card */}
         <View style={styles.formCard}>
 
+          {/* Account Created Success Banner */}
+          {params.accountCreated === '1' && (
+            <View style={styles.successBanner}>
+              <Ionicons name="checkmark-circle" size={18} color="#10B981" style={styles.successBannerIcon} />
+              <Text style={styles.successBannerText}>
+                Your account was created successfully! Please sign in.
+              </Text>
+            </View>
+          )}
+
           {/* Email Input Field */}
           <Text style={styles.inputLabel}>Email Address</Text>
           <View style={styles.inputWrapper}>
@@ -84,7 +226,10 @@ export default function LoginScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (errorMessage) setErrorMessage('');
+              }}
             />
           </View>
 
@@ -99,7 +244,12 @@ export default function LoginScreen() {
               secureTextEntry={!isPasswordVisible}
               autoCapitalize="none"
               value={password}
-              onChangeText={setPassword}
+              returnKeyType="go"
+              onSubmitEditing={handleSignIn}
+              onChangeText={(text) => {
+                setPassword(text);
+                if (errorMessage) setErrorMessage('');
+              }}
             />
             <TouchableOpacity
               onPress={() => setIsPasswordVisible(!isPasswordVisible)}
@@ -122,19 +272,34 @@ export default function LoginScreen() {
             <Text style={styles.forgotPasswordText}>Forgot Password?  ›</Text>
           </TouchableOpacity>
 
+          {/* Error Message Alert Banner */}
+          {errorMessage ? (
+            <View style={styles.errorContainer}>
+              <Ionicons name="alert-circle-outline" size={18} color="#EF4444" style={styles.errorIcon} />
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          ) : null}
+
           {/* Main Solid Brand Action Button */}
           <TouchableOpacity
-            style={styles.signInButton}
-            activeOpacity={0.9}
-            onPress={() => router.replace('/home')}
+            style={[styles.signInButton, isSubmitting && styles.signInButtonDisabled]}
+            activeOpacity={0.85}
+            onPress={handleSignIn}
+            disabled={isSubmitting}
           >
-            <Text style={styles.signInButtonText}>Sign In</Text>
-            <Ionicons
-              name="arrow-forward"
-              size={18}
-              color="#FFFFFF"
-              style={styles.signInArrow}
-            />
+            {isSubmitting ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Text style={styles.signInButtonText}>Sign In</Text>
+                <Ionicons
+                  name="arrow-forward"
+                  size={18}
+                  color="#FFFFFF"
+                  style={styles.signInArrow}
+                />
+              </>
+            )}
           </TouchableOpacity>
 
           {/* Form Divider Option Layout */}
@@ -147,13 +312,21 @@ export default function LoginScreen() {
           {/* Social Authentication Container Row */}
           <View style={styles.socialRow}>
             {/* Google Authentication Button */}
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.socialButton}
+              activeOpacity={0.7}
+              onPress={handleGoogleAuth}
+            >
               <FontAwesome name="google" size={18} color="#EA4335" style={styles.socialIcon} />
               <Text style={styles.socialButtonText}>Google</Text>
             </TouchableOpacity>
 
             {/* Apple Authentication Button */}
-            <TouchableOpacity style={styles.socialButton} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={styles.socialButton}
+              activeOpacity={0.7}
+              onPress={handleAppleAuth}
+            >
               <FontAwesome name="apple" size={18} color="#000000" style={styles.socialIcon} />
               <Text style={styles.socialButtonText}>Apple</Text>
             </TouchableOpacity>
@@ -169,6 +342,17 @@ export default function LoginScreen() {
 
         </View>
       </ScrollView>
+
+      {/* Google Account Chooser Modal */}
+      <GoogleAccountChooserModal
+        visible={isGoogleModalVisible}
+        onClose={() => setIsGoogleModalVisible(false)}
+        onSelectAccount={handleSelectGoogleAccount}
+        knownAccounts={(registeredUsers || []).map((u) => ({
+          fullName: u.fullName,
+          email: u.email,
+        }))}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -401,4 +585,48 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#F25C22',
   },
+  successBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DEF7EC',
+    borderWidth: 1,
+    borderColor: '#BCF0DA',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  successBannerIcon: {
+    marginRight: 8,
+  },
+  successBannerText: {
+    color: '#03543F',
+    fontSize: 13,
+    fontWeight: '600',
+    flex: 1,
+  },
+  signInButtonDisabled: {
+    opacity: 0.7,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  errorIcon: {
+    marginRight: 8,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 13,
+    fontWeight: '500',
+    flex: 1,
+  },
 });
+
