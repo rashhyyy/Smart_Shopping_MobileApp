@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -32,12 +32,36 @@ import Svg, { Circle } from 'react-native-svg';
 import { useRouter } from 'expo-router';
 import { useUser } from '../context/UserContext';
 
+// ✅ Helper to get real-time dynamic greeting
+const getGreeting = (): string => {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return 'Good Morning';
+  } else if (hour >= 12 && hour < 17) {
+    return 'Good Afternoon';
+  } else {
+    return 'Good Evening';
+  }
+};
+
 export default function Index() {
 
   // ✅ ROUTER
   const router = useRouter();
-  const { currency, cartItems, totalCartSpend } = useUser();
+  const { currency, cartItems, totalCartSpend, user } = useUser();
   const sym = currency?.symbol || '$';
+
+  // Dynamic real-time greeting
+  const [greeting, setGreeting] = useState<string>(getGreeting());
+
+  useEffect(() => {
+    setGreeting(getGreeting());
+    const timer = setInterval(() => {
+      setGreeting(getGreeting());
+    }, 60000); // Check every minute for time-of-day changes
+
+    return () => clearInterval(timer);
+  }, []);
 
   // Dynamic values
   const totalSpent = cartItems && cartItems.length > 0 ? totalCartSpend : 1121;
@@ -81,11 +105,11 @@ export default function Index() {
 
           <View>
             <Text style={styles.greetingText}>
-              Good Afternoon
+              {greeting}
             </Text>
 
             <Text style={styles.userName}>
-              Smart Shopper
+              {user?.fullName || 'Smart Shopper'}
             </Text>
           </View>
 
@@ -95,7 +119,7 @@ export default function Index() {
           >
             <Image
               source={{
-                uri: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80',
+                uri: user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=100&q=80',
               }}
               style={styles.profileImage}
             />
