@@ -11,10 +11,18 @@
  * Usage in Expo Router → app/(tabs)/add.tsx
  * Or as standalone screen in any React Navigation setup
  */
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 
 import * as Haptics from 'expo-haptics';
-import * as Speech from 'expo-speech';
+import {
+  isSpeechRecognitionNativeAvailable,
+  requestSpeechPermissionsAsync,
+  getSpeechPermissionsAsync,
+  startSpeechRecognition,
+  stopSpeechRecognition,
+  abortSpeechRecognition,
+  addSpeechEventListener,
+} from '../services/speechService';
 import {
   LayoutGrid,
   Scan,
@@ -24,6 +32,7 @@ import {
   ArrowLeft
 } from 'lucide-react-native';
 import { useUser } from '../context/UserContext';
+import { parseVoiceShoppingCommand } from '../utils/voiceParser';
 import React, {
   useCallback,
   useEffect,
@@ -32,10 +41,12 @@ import React, {
   useState,
 } from 'react';
 import {
+  Alert,
   Animated,
   Dimensions,
   Easing,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   ScrollView,
@@ -106,54 +117,176 @@ const VOICE_EXAMPLES = [
 ];
 
 // ─────────────────────────────────────────────
-// HELPERS
+// VOICE MODAL (for Expo Go keyboard microphone dictation)
 // ─────────────────────────────────────────────
-function parseVoiceInput(text: string): {
-  name: string;
-  price: number | null;
-  category: string | null;
-} {
-  let working = text.toLowerCase().trim();
-
-  // Extract price
-  const priceMatch =
-    working.match(/(?:rs\.?|lkr|₹|rupees?)[\s]*(\d+(?:[.,]\d{1,2})?)/i) ||
-    working.match(/(\d+(?:[.,]\d{1,2})?)[\s]*(?:rs\.?|lkr|₹|rupees?)/i) ||
-    working.match(/\bfor\s+(\d+(?:[.,]\d{1,2})?)\b/i) ||
-    working.match(/\b(\d{2,5}(?:\.\d{1,2})?)\b/);
-
-  const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : null;
-
-  // Remove "add" prefix
-  working = working.replace(/^add\s+/i, '').trim();
-
-  // Extract category
-  let category: string | null = null;
-  for (const cat of CATEGORIES) {
-    if (working.includes(cat.id) || working.includes(cat.label.toLowerCase())) {
-      category = cat.id;
-      working = working.replace(cat.id, '').replace(cat.label.toLowerCase(), '').trim();
-      break;
-    }
-  }
-
-  // Remove price text from name
-  let name = working
-    .replace(/(?:rs\.?|lkr|₹|for)\s*\d+(?:[.,]\d{1,2})?/gi, '')
-    .replace(/\d+(?:[.,]\d{1,2})?\s*(?:rs\.?|lkr|₹|rupees?)/gi, '')
-    .replace(/\b\d{2,5}(?:\.\d{1,2})?\b/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .trim();
-
-  // Capitalize words
-  name = name
-    .split(' ')
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(' ')
-    .trim();
-
-  return { name: name || '', price, category };
+interface VoiceModalProps {
+  visible: boolean;
+  onClose: () => void;
+  onSubmit: (text: string) => void;
 }
+
+function VoiceModal({ visible, onClose, onSubmit }: VoiceModalProps) {
+  const [text, setText] = useState('');
+
+  useEffect(() => {
+    if (visible) setText('');
+  }, [visible]);
+
+  if (!visible) return null;
+
+  return (
+    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={vm.overlay}
+      >
+        <View style={vm.card}>
+          <View style={vm.iconWrap}>
+            <Text style={{ fontSize: 26 }}>🎙</Text>
+          </View>
+          <Text style={vm.title}>Voice Shopping Assistant</Text>
+          <Text style={vm.subtitle}>
+            Tap your keyboard's microphone 🎙 to speak your command, or type below:
+          </Text>
+
+          <View style={vm.inputWrap}>
+            <TextInput
+              style={vm.input}
+              value={text}
+              onChangeText={setText}
+              placeholder='e.g. "Two fresh milk, 100 rupees"'
+              placeholderTextColor={T.textMuted}
+              autoFocus
+              multiline
+              returnKeyType="done"
+            />
+          </View>
+
+          <Text style={vm.hint}>
+            Try: "Three apples, 50 rupees each, 10 percent discount"
+          </Text>
+
+          <View style={vm.btnRow}>
+            <TouchableOpacity style={vm.cancelBtn} onPress={onClose} activeOpacity={0.7}>
+              <Text style={vm.cancelTxt}>Cancel</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[vm.applyBtn, !text.trim() && { backgroundColor: T.disabled }]}
+              disabled={!text.trim()}
+              onPress={() => {
+                onSubmit(text.trim());
+                onClose();
+              }}
+              activeOpacity={0.85}
+            >
+              <Text style={vm.applyTxt}>Auto-Fill Form</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+const vm = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: 'rgba(20,10,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  card: {
+    backgroundColor: T.white,
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 380,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 12,
+  },
+  iconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: T.accentSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: T.text,
+    marginBottom: 6,
+    textAlign: 'center',
+  },
+  subtitle: {
+    fontSize: 13,
+    color: T.textSub,
+    textAlign: 'center',
+    marginBottom: 16,
+    lineHeight: 18,
+  },
+  inputWrap: {
+    width: '100%',
+    backgroundColor: T.inputBg,
+    borderWidth: 1.5,
+    borderColor: T.borderFocus,
+    borderRadius: 14,
+    padding: 12,
+    minHeight: 80,
+    marginBottom: 10,
+  },
+  input: {
+    fontSize: 15,
+    color: T.text,
+    textAlignVertical: 'top',
+  },
+  hint: {
+    fontSize: 11,
+    color: T.textMuted,
+    fontStyle: 'italic',
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+  btnRow: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  cancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: T.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cancelTxt: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: T.textSub,
+  },
+  applyBtn: {
+    flex: 1.4,
+    backgroundColor: T.accent,
+    paddingVertical: 12,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  applyTxt: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: T.white,
+  },
+});
 
 // ─────────────────────────────────────────────
 // SUCCESS POPUP
@@ -262,10 +395,11 @@ const popup = StyleSheet.create({
 interface VoiceBannerProps {
   listening: boolean;
   transcript: string;
+  statusMessage?: string | null;
   onPress: () => void;
 }
 
-function VoiceBanner({ listening, transcript, onPress }: VoiceBannerProps) {
+function VoiceBanner({ listening, transcript, statusMessage, onPress }: VoiceBannerProps) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const exampleIdx = useRef(0);
   const [example, setExample] = useState(VOICE_EXAMPLES[0]);
@@ -317,15 +451,17 @@ function VoiceBanner({ listening, transcript, onPress }: VoiceBannerProps) {
       <View style={vb.textWrap}>
         {listening ? (
           <>
-            <Text style={[vb.title, { color: T.accent }]}>Listening…</Text>
-            <Text style={vb.sub} numberOfLines={1}>
-              {transcript || 'Speak now…'}
+            <Text style={[vb.title, { color: T.accent }]}>Listening… (Tap to Stop)</Text>
+            <Text style={vb.sub} numberOfLines={2}>
+              {transcript || 'Speak item details (e.g. "Two milk, 100 rupees")...'}
             </Text>
           </>
         ) : (
           <>
             <Text style={vb.title}>Tap to Use Voice</Text>
-            <Text style={vb.sub}>Try: {example}</Text>
+            <Text style={vb.sub} numberOfLines={1}>
+              {statusMessage ? statusMessage : `Try: ${example}`}
+            </Text>
           </>
         )}
       </View>
@@ -636,6 +772,7 @@ export default function AddItemScreen({
   onBack,
   existingCart = [],
 }: AddItemScreenProps) {
+  const params = useLocalSearchParams<{ autoVoice?: string }>();
   const [activeTab, setActiveTab] = useState('add');
   const [name, setName] = useState('');
   const [price, setPrice] = useState('');
@@ -645,8 +782,13 @@ export default function AddItemScreen({
   const [quantity, setQuantity] = useState('1');
   const [voiceListening, setVoiceListening] = useState(false);
   const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [voiceStatus, setVoiceStatus] = useState<string | null>(null);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [addedItem, setAddedItem] = useState<{ name: string; price: number } | null>(null);
+
+  const isStartingRef = useRef(false);
+  const lastRecognizedRef = useRef<string>('');
 
   // Scroll indicator shadow
   const scrollY = useRef(new Animated.Value(0)).current;
@@ -676,45 +818,180 @@ export default function AddItemScreen({
   const { currency, addToCart, totalCartItems } = useUser();
   const sym = currency?.symbol || '$';
 
-  // ── VOICE ──────────────────────────────────
-  const handleVoice = useCallback(() => {
-    if (voiceListening) {
-      setVoiceListening(false);
-      Speech.stop();
+  // ── MICROPHONE PERMISSIONS ─────────────────
+  const checkAndRequestMicrophonePermission = useCallback(async (): Promise<boolean> => {
+    try {
+      if (!isSpeechRecognitionNativeAvailable()) {
+        return false;
+      }
+
+      const perms = await getSpeechPermissionsAsync();
+      if (perms.granted) {
+        return true;
+      }
+
+      const requested = await requestSpeechPermissionsAsync();
+      if (requested.granted) {
+        return true;
+      }
+
+      if (requested.status === 'denied' && !requested.canAskAgain) {
+        Alert.alert(
+          'Microphone Permission Required',
+          'Microphone access is permanently denied. Please enable microphone permission in device settings to use voice input.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Open Settings', onPress: () => Linking.openSettings() },
+          ]
+        );
+      } else {
+        Alert.alert(
+          'Microphone Permission Denied',
+          'Microphone permission is required to detect shopping items from your voice.'
+        );
+      }
+      return false;
+    } catch (e: any) {
+      console.warn('Microphone permission check error:', e);
+      Alert.alert('Permission Error', e?.message || 'Could not verify microphone permissions.');
+      return false;
+    }
+  }, []);
+
+  // ── EXTRACT AND AUTO-FILL FORM FIELDS ───────
+  const handleFinalTranscript = useCallback((text: string) => {
+    if (!text || !text.trim()) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    const parsed = parseVoiceShoppingCommand(text);
+
+    // Auto-fill existing fields for user review (NO automatic cart submission)
+    if (parsed.name) {
+      setName(parsed.name);
+    }
+    if (parsed.price !== null && !isNaN(parsed.price)) {
+      setPrice(parsed.price.toString());
+    }
+    if (parsed.quantity > 0) {
+      setQuantity(parsed.quantity.toString());
+    }
+    if (parsed.discount >= 0) {
+      setDiscount(parsed.discount.toString());
+    }
+    if (parsed.category) {
+      const matched = CATEGORIES.find((c) => c.id === parsed.category);
+      if (matched) {
+        setCategory(matched.id);
+      }
+    }
+
+    let msg = `Filled: "${text}"`;
+    if (parsed.price === null) {
+      msg += ' — Please enter price';
+    }
+    setVoiceStatus(msg);
+  }, []);
+
+  // ── SPEECH RECOGNITION EVENTS (NATIVE) ───────
+  useEffect(() => {
+    if (!isSpeechRecognitionNativeAvailable()) return;
+
+    const unsubs = [
+      addSpeechEventListener('start', () => {
+        setVoiceListening(true);
+        setVoiceStatus(null);
+      }),
+      addSpeechEventListener('result', (event: any) => {
+        const text = event?.results?.[0]?.transcript || '';
+        if (text) {
+          setVoiceTranscript(text);
+          lastRecognizedRef.current = text;
+        }
+        if (event?.isFinal && text) {
+          handleFinalTranscript(text);
+        }
+      }),
+      addSpeechEventListener('end', () => {
+        setVoiceListening(false);
+        if (lastRecognizedRef.current && lastRecognizedRef.current.trim()) {
+          handleFinalTranscript(lastRecognizedRef.current);
+          lastRecognizedRef.current = '';
+        }
+      }),
+      addSpeechEventListener('error', (event: any) => {
+        setVoiceListening(false);
+        const errType = event?.error;
+        if (errType === 'no-speech' || errType === 'speech-timeout') {
+          setVoiceStatus('No speech detected. Tap to try again.');
+        } else if (errType === 'not-allowed') {
+          Alert.alert('Permission Denied', 'Microphone permission was denied.');
+        } else if (errType === 'network') {
+          Alert.alert('Network Error', 'Speech recognition requires an internet connection.');
+        } else if (errType !== 'aborted') {
+          setVoiceStatus(`Voice ended: ${event?.message || errType}`);
+        }
+      }),
+    ];
+
+    return () => {
+      unsubs.forEach((unsub) => unsub());
+      abortSpeechRecognition();
+    };
+  }, [handleFinalTranscript]);
+
+  // ── VOICE TOGGLE HANDLER ───────────────────
+  const handleVoice = useCallback(async () => {
+    // 1. Native module available (Development Build / Standalone APK)
+    if (isSpeechRecognitionNativeAvailable()) {
+      if (voiceListening) {
+        stopSpeechRecognition();
+        setVoiceListening(false);
+        return;
+      }
+
+      if (isStartingRef.current) return;
+      isStartingRef.current = true;
+      setVoiceStatus(null);
+      setVoiceTranscript('');
+      lastRecognizedRef.current = '';
+
+      const hasPermission = await checkAndRequestMicrophonePermission();
+      if (!hasPermission) {
+        isStartingRef.current = false;
+        return;
+      }
+
+      try {
+        startSpeechRecognition({
+          lang: 'en-US',
+          interimResults: true,
+          maxAlternatives: 1,
+        });
+        setVoiceListening(true);
+        Haptics.selectionAsync();
+      } catch (err: any) {
+        console.error('Error starting speech recognition:', err);
+        Alert.alert('Voice Error', err?.message || 'Could not start speech recognition.');
+        setVoiceListening(false);
+      } finally {
+        isStartingRef.current = false;
+      }
       return;
     }
-    // Expo Speech is text-to-speech; for voice input we simulate with demo
-    // In production use expo-av + speech recognition (react-native-voice)
-    setVoiceListening(true);
-    setVoiceTranscript('');
 
-    // Simulate voice recognition (replace with real STT in production)
-    const demos = [
-      'Add milk for 72 rupees dairy',
-      'Bread 45 bakery',
-      'Chicken breast 180 rupees meat',
-      'Olive oil 220 grocery',
-    ];
-    const demo = demos[Math.floor(Math.random() * demos.length)];
+    // 2. Running in Expo Go: Open Voice Assistant dialog for keyboard microphone dictation
+    setShowVoiceModal(true);
+  }, [voiceListening, checkAndRequestMicrophonePermission]);
 
-    let i = 0;
-    const typeInterval = setInterval(() => {
-      setVoiceTranscript(demo.slice(0, i + 1));
-      i++;
-      if (i >= demo.length) {
-        clearInterval(typeInterval);
-        setTimeout(() => {
-          const parsed = parseVoiceInput(demo);
-          if (parsed.name) setName(parsed.name);
-          if (parsed.price) setPrice(parsed.price.toString());
-          if (parsed.category) setCategory(parsed.category);
-          setVoiceListening(false);
-          setVoiceTranscript('');
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }, 400);
-      }
-    }, 40);
-  }, [voiceListening]);
+  // Handle autoVoice navigation trigger from Home Screen shortcut
+  useEffect(() => {
+    if (params.autoVoice === 'true') {
+      const timer = setTimeout(() => {
+        handleVoice();
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [params.autoVoice, handleVoice]);
 
   // ── ADD TO CART ─────────────────────────────
   const handleAdd = useCallback(() => {
@@ -811,6 +1088,7 @@ export default function AddItemScreen({
           <VoiceBanner
             listening={voiceListening}
             transcript={voiceTranscript}
+            statusMessage={voiceStatus}
             onPress={handleVoice}
           />
 
@@ -1032,6 +1310,13 @@ export default function AddItemScreen({
           <Text style={s.tabLabel}>Budget</Text>
         </TouchableOpacity>
       </View>
+
+      {/* VOICE MODAL (for Expo Go keyboard dictation) */}
+      <VoiceModal
+        visible={showVoiceModal}
+        onClose={() => setShowVoiceModal(false)}
+        onSubmit={handleFinalTranscript}
+      />
 
       {/* SUCCESS POPUP */}
       {addedItem && (

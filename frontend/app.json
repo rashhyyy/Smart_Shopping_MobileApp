@@ -8,14 +8,22 @@
     "scheme": "frontend",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSSpeechRecognitionUsageDescription": "Allow Smart Shopper to convert your speech into shopping items.",
+        "NSMicrophoneUsageDescription": "Allow Smart Shopper to access your microphone for voice commands."
+      }
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
-      "package": "com.anonymous.frontend"
+      "package": "com.anonymous.frontend",
+      "permissions": [
+        "RECORD_AUDIO",
+        "INTERNET"
+      ]
     },
     "web": {
       "favicon": "./assets/images/favicon.png"
@@ -24,7 +32,14 @@
       "expo-font",
       "expo-router",
       "expo-asset",
-      "expo-image"
+      "expo-image",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow Smart Shopper to use your microphone to detect shopping item prices and names.",
+          "speechRecognitionPermission": "Allow Smart Shopper to convert speech to text."
+        }
+      ]
     ]
   }
 }

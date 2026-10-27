@@ -6,7 +6,6 @@ import {
     StyleSheet,
     Image,
     TouchableOpacity,
-    ImageBackground,
     Animated,
 } from "react-native";
 import { useUser } from "../context/UserContext";
@@ -43,11 +42,12 @@ export default function StartPage() {
 
 
     return (
-        <ImageBackground
-            source={require("../../assets/images/background.png")}
-            style={styles.container}
-            resizeMode="cover"
-        >
+        <View style={styles.container}>
+            <Image
+                source={require("../../assets/images/background.png")}
+                style={StyleSheet.absoluteFillObject}
+                resizeMode="cover"
+            />
             {/* Logo */}
             <View style={styles.logoContainer}>
                 <Animated.Image
@@ -95,7 +95,7 @@ export default function StartPage() {
 
             {/* Bottom Wave */}
 
-        </ImageBackground>
+        </View>
     );
 }
 

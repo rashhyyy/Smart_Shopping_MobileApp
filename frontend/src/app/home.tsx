@@ -252,7 +252,10 @@ export default function Index() {
                 </Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.actionButton}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => router.push({ pathname: '/AddScreen', params: { autoVoice: 'true' } })}
+              >
                 <View
                   style={[
                     styles.iconContainer,
